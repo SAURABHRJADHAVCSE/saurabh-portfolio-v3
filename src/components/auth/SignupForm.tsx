@@ -52,9 +52,9 @@ export default function SignupForm() {
   const busy = emailLoading || googleLoading;
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4">
       {/* Header */}
-      <div className="grid gap-2 text-center">
+      <div className="grid gap-1 text-center">
         <h1 className="text-2xl font-bold tracking-tight">Create Account</h1>
         <p className="text-sm text-muted-foreground">
           Enter your information to get started
@@ -63,7 +63,7 @@ export default function SignupForm() {
 
       {/* Form */}
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3">
           <FormField
             control={form.control}
             name="displayName"
@@ -138,7 +138,7 @@ export default function SignupForm() {
 
       {/* Divider */}
       <div className="relative text-center text-xs text-muted-foreground after:absolute after:inset-0 after:top-1/2 after:border-t after:border-border">
-        <span className="relative z-10 bg-background px-2">Or continue with</span>
+        <span className="relative z-10 bg-background px-2">Or</span>
       </div>
 
       {/* Google */}

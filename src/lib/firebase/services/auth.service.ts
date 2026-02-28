@@ -270,11 +270,7 @@ export const AuthService = {
       try {
         const userDocRef = doc(db, USERS_COLLECTION, user.uid);
         await deleteDoc(userDocRef);
-      } catch (firestoreError) {
-        console.error(
-          '[Auth] Failed to delete Firestore user document:',
-          firestoreError instanceof Error ? firestoreError.message : 'Unknown error',
-        );
+      } catch (_firestoreError) {
         // Continue with account deletion — orphaned document can be
         // cleaned up later via a Cloud Function or admin script.
       }

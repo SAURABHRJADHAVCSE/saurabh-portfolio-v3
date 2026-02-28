@@ -91,7 +91,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         });
 
         if (!res.ok) {
-          console.warn(`[Auth] Session sync failed (${res.status}) — signing out to stay in sync with server.`);
           await signOut(auth);
           return false;
         }
