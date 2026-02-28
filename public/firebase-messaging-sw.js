@@ -5,24 +5,29 @@
  * or closed.  This file MUST live at the root of /public/ so it can
  * be registered with the correct scope.
  *
- * In production, replace the firebaseConfig values below with your
- * actual config — or load them dynamically via query params at
- * registration time.
+ * SETUP:
+ *   1. Replace the firebaseConfig values below with your project's
+ *      public Firebase config (same values as NEXT_PUBLIC_FIREBASE_*).
+ *   2. Set NEXT_PUBLIC_FIREBASE_UAT_VAPID_KEY in .env
+ *   3. Register the service worker in your app and request notification
+ *      permission.
+ *
+ * These config values are SAFE to hardcode — they're already public
+ * in the client bundle. They are NOT secret keys.
  */
 
 /* eslint-disable no-undef */
-importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.10.0/firebase-messaging-compat.js');
 
-// Minimal config needed for the service worker (no auth, no Firestore)
-// These values are safe to expose — they're already public in the client bundle.
+// ⬇️ Replace with YOUR Firebase project config (public values only)
 firebase.initializeApp({
-  apiKey: self.__FIREBASE_CONFIG__?.apiKey ?? '',
-  authDomain: self.__FIREBASE_CONFIG__?.authDomain ?? '',
-  projectId: self.__FIREBASE_CONFIG__?.projectId ?? '',
-  storageBucket: self.__FIREBASE_CONFIG__?.storageBucket ?? '',
-  messagingSenderId: self.__FIREBASE_CONFIG__?.messagingSenderId ?? '',
-  appId: self.__FIREBASE_CONFIG__?.appId ?? '',
+  apiKey: 'YOUR_API_KEY',
+  authDomain: 'YOUR_PROJECT.firebaseapp.com',
+  projectId: 'YOUR_PROJECT_ID',
+  storageBucket: 'YOUR_PROJECT.firebasestorage.app',
+  messagingSenderId: 'YOUR_SENDER_ID',
+  appId: 'YOUR_APP_ID',
 });
 
 const messaging = firebase.messaging();
@@ -30,14 +35,13 @@ const messaging = firebase.messaging();
 // Handle background messages
 messaging.onBackgroundMessage(function (payload) {
   const data = payload.data || {};
-  const notificationTitle = payload.notification?.title || data.title || 'LinkedIn Autoposter';
+  const notificationTitle = payload.notification?.title || data.title || 'DevStudio';
   const notificationOptions = {
     body: payload.notification?.body || data.body || '',
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/icon-72x72.png',
+    icon: '/icon-192x192.svg',
+    badge: '/icon-192x192.svg',
     data: {
-      postId: data.postId,
-      clickAction: data.clickAction || '/dashboard',
+      clickAction: data.clickAction || '/',
     },
   };
 
@@ -47,7 +51,7 @@ messaging.onBackgroundMessage(function (payload) {
 // Handle notification click — open the relevant page
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
-  const clickAction = event.notification.data?.clickAction || '/dashboard';
+  const clickAction = event.notification.data?.clickAction || '/';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
