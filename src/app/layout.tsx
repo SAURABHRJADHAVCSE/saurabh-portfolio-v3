@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Barlow, Rubik, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { verifyEnvironmentConfiguration } from "@/lib/firebase/config/environments";
 
 // Barlow - For headings (bold, modern)
 const barlow = Barlow({
@@ -41,11 +40,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Verify environment configuration on server-side only
-  if (typeof window === 'undefined') {
-    verifyEnvironmentConfiguration();
-  }
-  
   return (
     <html lang="en">
       <body

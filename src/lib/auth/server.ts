@@ -6,13 +6,16 @@
  * Security model:
  *   1. Client gets a Firebase ID token from Firebase Auth
  *   2. Client sends it to /api/auth/session
- *   3. Session route verifies the token via Firebase Admin SDK, then sets an httpOnly cookie
- *   4. getCurrentUser() verifies the raw ID token cookie on every request
+ *   3. Session route verifies the ID token, creates a Firebase session cookie,
+ *      and stores it in an httpOnly cookie (lasts 5 days, supports revocation)
+ *   4. getCurrentUser() verifies the session cookie on every request
  *      using Firebase Admin SDK — no trust placed on client-supplied data
  *
  * This replaces the previous implementation that trusted an unverified
  * userData JSON cookie (auth bypass vulnerability).
  */
+
+import 'server-only';
 
 import { cookies } from 'next/headers';
 import { cache, experimental_taintUniqueValue } from 'react';
@@ -39,24 +42,23 @@ export const AUTH_COOKIE_OPTIONS = {
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
   path: '/',
-  // 55 minutes — slightly less than the 60-minute token expiry so that
-  // the cookie never holds a stale token for long. AuthContext refreshes
-  // the token (and re-sets the cookie) every 50 minutes while the app is open.
-  maxAge: 55 * 60,
+  // 5 days — matches Firebase session cookie expiry. AuthContext refreshes
+  // periodically while the app is open to extend the session.
+  maxAge: 5 * 24 * 60 * 60,
 };
 
 // ─── Token Verification ──────────────────────────────────────────────────────
 
 /**
- * Verify a Firebase ID token using the Admin SDK.
+ * Verify a Firebase session cookie using the Admin SDK.
  * Returns the decoded token claims on success, or null on any failure.
  *
  * The `checkRevoked` flag ensures that if the user signs out on another
  * device, or the token is manually revoked, it is rejected here.
  */
-async function verifyIdToken(token: string): Promise<ServerUser | null> {
+async function verifySessionCookie(token: string): Promise<ServerUser | null> {
   try {
-    const decoded = await getAdminAuth().verifyIdToken(token, /* checkRevoked */ true);
+    const decoded = await getAdminAuth().verifySessionCookie(token, /* checkRevoked */ true);
 
     return {
       uid: decoded.uid,
@@ -102,8 +104,8 @@ export const getCurrentUser = cache(async (): Promise<ServerUser | null> => {
       token,
     );
 
-    // Cryptographically verify the token with Firebase Admin SDK
-    return await verifyIdToken(token);
+    // Cryptographically verify the session cookie with Firebase Admin SDK
+    return await verifySessionCookie(token);
   } catch (error) {
     // During build, cookies() throws DYNAMIC_SERVER_USAGE — expected
     if (

@@ -19,12 +19,12 @@ export default function Home() {
                 Firebase Auth with email/password and Google OAuth
               </p>
               <div className="space-x-2">
-                <Link href="/login">
-                  <Button size="sm">Login</Button>
-                </Link>
-                <Link href="/signup">
-                  <Button size="sm" variant="outline">Sign Up</Button>
-                </Link>
+                <Button size="sm" asChild>
+                  <Link href="/login">Login</Link>
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/signup">Sign Up</Link>
+                </Button>
               </div>
             </div>
 
@@ -33,9 +33,9 @@ export default function Home() {
               <p className="body mb-3">
                 Secure PayU gateway integration with multiple payment methods
               </p>
-              <Link href="/checkout">
-                <Button size="sm">Checkout</Button>
-              </Link>
+              <Button size="sm" asChild>
+                <Link href="/checkout">Checkout</Link>
+              </Button>
             </div>
 
             <div className="border rounded-lg p-4">
@@ -43,9 +43,9 @@ export default function Home() {
               <p className="body mb-3">
                 User profile, password change, and account management
               </p>
-              <Link href="/profile">
-                <Button size="sm" variant="outline">View Profile</Button>
-              </Link>
+              <Button size="sm" variant="outline" asChild>
+                <Link href="/profile">View Profile</Link>
+              </Button>
             </div>
 
             <div className="border rounded-lg p-4">
@@ -58,9 +58,9 @@ export default function Home() {
         </section>
 
         <section className="text-center">
-          <Link href="/login">
-            <Button>Get Started</Button>
-          </Link>
+          <Button asChild>
+            <Link href="/login">Get Started</Link>
+          </Button>
         </section>
       </main>
     </div>

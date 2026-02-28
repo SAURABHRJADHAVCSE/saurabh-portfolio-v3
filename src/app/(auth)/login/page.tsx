@@ -1,5 +1,3 @@
-import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth/server';
 import { Suspense } from 'react';
 import LoginForm from '@/components/auth/LoginForm';
 import type { Metadata } from 'next';
@@ -9,14 +7,7 @@ export const metadata: Metadata = {
   description: 'Sign in to your account',
 };
 
-export default async function LoginPage() {
-  // If already authenticated, redirect to profile
-  const user = await getCurrentUser();
-
-  if (user) {
-    redirect('/profile');
-  }
-
+export default function LoginPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center">

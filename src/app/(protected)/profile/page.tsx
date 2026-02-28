@@ -3,8 +3,7 @@
  * Displays user information and provides logout functionality
  */
 
-import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth/server';
+import { requireAuth } from '@/lib/auth/server';
 import UserProfile from '@/components/auth/UserProfile';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,12 +17,8 @@ export const metadata: Metadata = {
 };
 
 export default async function ProfilePage() {
-  // Server-side auth check
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect('/login?redirect=/profile&message=Please sign in to view your profile');
-  }
+  // Auth guaranteed by protected layout; requireAuth() gives us a typed ServerUser
+  const user = await requireAuth();
 
   return (
     <div className="min-h-screen bg-background">

@@ -7,6 +7,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  reauthenticateWithPopup,
   GoogleAuthProvider,
   sendPasswordResetEmail,
   signOut,
@@ -174,7 +175,7 @@ export const AuthService = {
       if (!user) return null;
       
       // Get additional user data from Firestore
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const userDoc = await getDoc(doc(db, USERS_COLLECTION, user.uid));
       
       if (userDoc.exists()) {
         return userDoc.data() as AppUser;
@@ -262,7 +263,7 @@ export const AuthService = {
       // For Google users, they need to re-authenticate with Google popup
       if (user.providerData[0]?.providerId === 'google.com') {
         const provider = new GoogleAuthProvider();
-        await signInWithPopup(auth, provider);
+        await reauthenticateWithPopup(user, provider);
       }
 
       // Delete user data from Firestore first
@@ -270,7 +271,12 @@ export const AuthService = {
         const userDocRef = doc(db, USERS_COLLECTION, user.uid);
         await deleteDoc(userDocRef);
       } catch (firestoreError) {
-        // Continue even if Firestore deletion fails
+        console.error(
+          '[Auth] Failed to delete Firestore user document:',
+          firestoreError instanceof Error ? firestoreError.message : 'Unknown error',
+        );
+        // Continue with account deletion — orphaned document can be
+        // cleaned up later via a Cloud Function or admin script.
       }
 
       // Delete the user account

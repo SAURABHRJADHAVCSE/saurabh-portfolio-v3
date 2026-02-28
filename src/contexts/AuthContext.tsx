@@ -37,8 +37,8 @@ interface AuthProviderProps {
  * Authentication Provider Component
  * Wraps app to provide real-time auth state
  */
-/** How often to proactively refresh the session cookie (50 min — tokens expire at 60 min) */
-const TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000;
+/** How often to proactively refresh the session cookie (4 hours — session cookies last 5 days) */
+const TOKEN_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -46,12 +46,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /**
-   * Sync the Firebase ID token to the server-side httpOnly cookie.
-   * Silently swallows network errors so a transient failure
-   * doesn't break the client-side auth state.
-   */
-  /**
-   * Sync the Firebase ID token to the server-side httpOnly cookie.
+   * Sync the Firebase ID token to the server-side httpOnly session cookie.
    * Returns true if the session is good, false if the user was signed out
    * (e.g. Admin SDK rejected the token) — caller must NOT call setLoading(false)
    * in that case because onAuthStateChanged(null) is already in flight.
@@ -59,7 +54,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const syncSession = useCallback(async (firebaseUser: User | null): Promise<boolean> => {
     try {
       if (firebaseUser) {
-        const token = await firebaseUser.getIdToken(/* forceRefresh */ false);
+        const token = await firebaseUser.getIdToken(/* forceRefresh */ true);
         const res = await fetch('/api/auth/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -91,13 +86,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     // Listen for authentication state changes
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-
-      // syncSession FIRST — cookie must be written before loading clears.
-      // If syncSession returns false it called signOut(); the resulting
-      // onAuthStateChanged(null) will handle setLoading(false) and timer
-      // cleanup, so we return early here to avoid a race where loading=false
-      // briefly coexists with a non-null user but no cookie.
+      // syncSession FIRST — cookie must be written before loading clears
+      // and user state is set. setUser is deferred until AFTER the session
+      // is confirmed, preventing isAuthenticated from briefly being true
+      // while the server-side cookie doesn’t exist yet.
       if (firebaseUser) {
         const ok = await syncSession(firebaseUser);
         if (!ok) return;
@@ -105,6 +97,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         await syncSession(null);
       }
 
+      setUser(firebaseUser);
       setLoading(false);
 
       // Clear any previous refresh timer

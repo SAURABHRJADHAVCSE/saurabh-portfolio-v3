@@ -27,6 +27,16 @@ interface RateLimitEntry {
 // Module-level map — persists across requests within the same server process
 const store = new Map<string, RateLimitEntry>();
 
+// Warn once per cold start in production so operators don't forget to switch
+// to a distributed store (e.g. @upstash/ratelimit + @upstash/redis).
+if (process.env.NODE_ENV === 'production') {
+  console.warn(
+    '[RateLimit] ⚠️  Using in-memory rate limiter. State resets on every ' +
+    'cold start and is NOT shared across serverless instances. ' +
+    'For production, migrate to @upstash/ratelimit with @upstash/redis.',
+  );
+}
+
 // Periodically evict expired entries to prevent unbounded memory growth.
 // Runs every 5 minutes if the module is alive.
 if (typeof setInterval !== 'undefined') {

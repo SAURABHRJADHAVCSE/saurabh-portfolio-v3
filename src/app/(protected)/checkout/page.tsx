@@ -1,5 +1,3 @@
-import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth/server';
 import { Suspense } from 'react';
 import PaymentForm from '@/components/payment/PaymentForm';
 import { Button } from '@/components/ui/button';
@@ -20,13 +18,6 @@ interface CheckoutPageProps {
 }
 
 export default async function CheckoutPage({ searchParams }: CheckoutPageProps) {
-  // Server-side auth check
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect('/login?redirect=/checkout&message=Please sign in to make a payment');
-  }
-
   // Get search params
   const params = await searchParams;
   const productInfo = params.product ? decodeURIComponent(params.product) : '';

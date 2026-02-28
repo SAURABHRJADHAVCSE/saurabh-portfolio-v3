@@ -48,12 +48,28 @@ function sanitizeRedirect(redirect: string | null): string {
 
 /**
  * Check if user is authenticated based on cookies.
- * Only the httpOnly firebaseAuthToken cookie is used — the server
- * verifies it cryptographically via Firebase Admin SDK on every request.
+ * Performs a lightweight JWT structure + expiry check (no crypto needed at
+ * the edge). Full cryptographic verification happens server-side via
+ * Firebase Admin SDK in getCurrentUser().
  */
 function isAuthenticated(request: NextRequest): boolean {
   const authToken = request.cookies.get('firebaseAuthToken');
-  return !!authToken?.value;
+  if (!authToken?.value) return false;
+
+  try {
+    const parts = authToken.value.split('.');
+    if (parts.length !== 3) return false;
+
+    // Decode JWT payload (base64url → JSON) and check expiry
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(base64));
+    if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now()) {
+      return false; // Session cookie expired
+    }
+    return true;
+  } catch {
+    return false; // Malformed cookie
+  }
 }
 
 /**

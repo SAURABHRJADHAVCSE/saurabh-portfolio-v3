@@ -88,12 +88,9 @@ export const checkPasswordStrength = (password: string) => {
     }
   }
 
-  // Additional strength indicators
-  if (password.length >= 8) strength.score += 0.5;
+  // Bonus for extra length beyond the minimum requirement
   if (password.length >= 12) strength.score += 0.5;
-  if (/[A-Z]/.test(password) && /[a-z]/.test(password)) strength.score += 0.5;
-  if (/\d/.test(password)) strength.score += 0.5;
-  if (/[!@#$%^&*(),.?":{}|<>]/.test(password)) strength.score += 0.5;
+  if (password.length >= 16) strength.score += 0.5;
 
   return strength;
 };

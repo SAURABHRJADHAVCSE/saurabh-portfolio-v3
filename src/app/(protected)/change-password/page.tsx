@@ -1,5 +1,3 @@
-import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth/server';
 import ChangePasswordForm from '@/components/auth/ChangePasswordForm';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
@@ -11,14 +9,7 @@ export const metadata: Metadata = {
   description: 'Update your account password',
 };
 
-export default async function ChangePasswordPage() {
-  // Server-side auth check
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect('/login?redirect=/change-password&message=Please sign in to change password');
-  }
-
+export default function ChangePasswordPage() {
   // Note: We can't check provider on server-side without full user data
   // The form component will handle Google user detection client-side
 

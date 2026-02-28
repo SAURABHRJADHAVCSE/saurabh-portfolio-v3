@@ -1,5 +1,3 @@
-import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth/server';
 import DeleteAccountForm from '@/components/auth/DeleteAccountForm';
 import type { Metadata } from 'next';
 
@@ -8,14 +6,7 @@ export const metadata: Metadata = {
   description: 'Permanently delete your account and all associated data',
 };
 
-export default async function DeleteAccountPage() {
-  // Server-side auth check - no loading state needed!
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect('/login?redirect=/delete-account&message=Please sign in to access account deletion');
-  }
-
+export default function DeleteAccountPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">

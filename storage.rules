@@ -1,0 +1,45 @@
+rules_version = '2';
+
+/**
+ * Firebase Storage Security Rules
+ *
+ * Restricts file uploads/downloads to authenticated users and enforces
+ * size limits + content-type validation to prevent abuse.
+ *
+ * Adjust paths and limits as your app's storage needs grow.
+ */
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Deny all by default ─────────────────────────────────────────────
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // ── User Profile Avatars ────────────────────────────────────────────
+    // Path: /users/{userId}/avatar/{filename}
+    match /users/{userId}/avatar/{fileName} {
+      // Anyone authenticated can view profile pictures
+      allow read: if request.auth != null;
+
+      // Only the owner can upload/overwrite their avatar
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   // Max 5 MB
+                   && request.resource.size < 5 * 1024 * 1024
+                   // Images only
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // ── User Uploads (generic) ──────────────────────────────────────────
+    // Path: /users/{userId}/uploads/{fileName}
+    match /users/{userId}/uploads/{fileName} {
+      // Owner read/write only
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   // Max 10 MB
+                   && request.resource.size < 10 * 1024 * 1024;
+    }
+  }
+}

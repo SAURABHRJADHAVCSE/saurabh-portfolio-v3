@@ -13,6 +13,8 @@
  * The projectId is always taken from the current environment config.
  */
 
+import 'server-only';
+
 import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
 import { getAuth, type Auth } from 'firebase-admin/auth';
 

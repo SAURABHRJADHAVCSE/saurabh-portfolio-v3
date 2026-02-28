@@ -14,6 +14,9 @@ import { getAdminAuth } from '@/lib/firebase/admin';
 import { AUTH_TOKEN_COOKIE, AUTH_COOKIE_OPTIONS } from '@/lib/auth/server';
 import { checkRateLimit } from '@/lib/rate-limit';
 
+/** Session cookie expiry: 5 days (must match AUTH_COOKIE_OPTIONS.maxAge) */
+const SESSION_COOKIE_EXPIRY_MS = 5 * 24 * 60 * 60 * 1000;
+
 // ─── CSRF Helpers ────────────────────────────────────────────────────────────
 
 /**
@@ -91,9 +94,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    // 4. Set the verified token as an httpOnly cookie
+    // 4. Create a Firebase session cookie from the verified ID token.
+    //    Session cookies are long-lived (5 days), support revocation,
+    //    and are verified server-side with verifySessionCookie().
+    let sessionCookie: string;
+    try {
+      sessionCookie = await getAdminAuth().createSessionCookie(token, {
+        expiresIn: SESSION_COOKIE_EXPIRY_MS,
+      });
+    } catch (err) {
+      console.error('[Session] createSessionCookie failed:', err instanceof Error ? err.message : err);
+      return NextResponse.json({ error: 'Failed to create session' }, { status: 500 });
+    }
+
     const cookieStore = await cookies();
-    cookieStore.set(AUTH_TOKEN_COOKIE, token, AUTH_COOKIE_OPTIONS);
+    cookieStore.set(AUTH_TOKEN_COOKIE, sessionCookie, AUTH_COOKIE_OPTIONS);
 
     return NextResponse.json({ success: true });
   } catch {
@@ -106,6 +121,18 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    // Rate limiting — same budget as POST
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      ?? request.headers.get('x-real-ip')
+      ?? 'unknown';
+    const { allowed, retryAfterSec } = checkRateLimit(`session-del:${ip}`, 15, 60_000);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
+        { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
+      );
+    }
+
     // CSRF check
     if (!isValidOrigin(request)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
