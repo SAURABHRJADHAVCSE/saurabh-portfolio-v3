@@ -3,8 +3,7 @@
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Eye, EyeOff, Lock } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { checkPasswordStrength } from '@/lib/auth/config';
 import { cn } from '@/lib/utils';
 
@@ -13,104 +12,75 @@ interface PasswordInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   showStrength?: boolean;
-  /** Email to check against for password similarity (prevents using email as password) */
   email?: string;
+  disabled?: boolean;
   className?: string;
   id?: string;
 }
 
-/**
- * Enhanced password input with visibility toggle and strength indicator
- */
-export default function PasswordInput({ 
-  value, 
-  onChange, 
-  placeholder = "Enter your password",
-  showStrength = false,
-  email,
-  className,
-  id 
+export default function PasswordInput({
+  value, onChange, placeholder = 'Enter your password',
+  showStrength = false, email, disabled, className, id,
 }: PasswordInputProps) {
-  const [showPassword, setShowPassword] = useState(false);
-  
-  // Calculate password strength (pass email to detect email-as-password)
+  const [visible, setVisible] = useState(false);
   const strength = showStrength ? checkPasswordStrength(value, email) : null;
-  
-  // Get strength color and label
-  const getStrengthInfo = (score: number) => {
-    if (score < 2) return { color: 'destructive', label: 'Weak' };
-    if (score < 3) return { color: 'secondary', label: 'Fair' };
-    if (score < 4) return { color: 'default', label: 'Good' };
-    return { color: 'default', label: 'Strong' };
+
+  const strengthMeta = (score: number) => {
+    if (score < 2) return { label: 'Weak', bar: 'bg-destructive w-1/4' };
+    if (score < 3) return { label: 'Fair', bar: 'bg-muted-foreground w-2/4' };
+    if (score < 4) return { label: 'Good', bar: 'bg-primary w-3/4' };
+    return { label: 'Strong', bar: 'bg-primary w-full' };
   };
 
-  const strengthInfo = strength ? getStrengthInfo(strength.score) : null;
+  const meta = strength ? strengthMeta(strength.score) : null;
 
   return (
     <div className="space-y-2">
-      {/* Password Input Field */}
       <div className="relative">
-        <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
         <Input
           id={id}
-          type={showPassword ? 'text' : 'password'}
+          type={visible ? 'text' : 'password'}
           placeholder={placeholder}
-          className={cn("pl-10 pr-10", className)}
+          className={cn('pr-10', className)}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
         />
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="absolute right-1 top-1 h-8 w-8 px-0"
-          onClick={() => setShowPassword(!showPassword)}
+          className="absolute right-1 top-1 size-8 px-0"
+          onClick={() => setVisible(!visible)}
           tabIndex={-1}
         >
-          {showPassword ? (
-            <EyeOff className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <Eye className="h-4 w-4 text-muted-foreground" />
-          )}
-          <span className="sr-only">
-            {showPassword ? 'Hide password' : 'Show password'}
-          </span>
+          {visible
+            ? <EyeOff className="size-4 text-muted-foreground" />
+            : <Eye className="size-4 text-muted-foreground" />}
+          <span className="sr-only">{visible ? 'Hide' : 'Show'} password</span>
         </Button>
       </div>
 
-      {/* Password Strength Indicator */}
-      {showStrength && value && strength && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Password strength:</span>
-            <Badge 
-              variant={strengthInfo?.color === 'destructive' ? 'destructive' : 'default'}
-              className="text-xs"
-            >
-              {strengthInfo?.label}
-            </Badge>
-          </div>
-          
-          {/* Progress Bar */}
-          <div className="w-full bg-muted rounded-full h-1">
-            <div
-              className={cn(
-                "h-1 rounded-full transition-all duration-300",
-                strength.score < 2 && "bg-destructive w-1/4",
-                strength.score >= 2 && strength.score < 3 && "bg-muted-foreground w-2/4",
-                strength.score >= 3 && strength.score < 4 && "bg-primary w-3/4",
-                strength.score >= 4 && "bg-primary w-full"
-              )}
-            />
+      {showStrength && value && strength && meta && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Strength</span>
+            <span className={cn(
+              'font-medium',
+              strength.score < 2 ? 'text-destructive' : 'text-foreground',
+            )}>{meta.label}</span>
           </div>
 
-          {/* Feedback Messages */}
+          <div className="h-1 w-full rounded-full bg-muted">
+            <div className={cn('h-1 rounded-full transition-all duration-300', meta.bar)} />
+          </div>
+
           {strength.feedback.length > 0 && (
-            <ul className="text-xs text-muted-foreground space-y-1">
-              {strength.feedback.map((feedback, index) => (
-                <li key={index} className="flex items-center">
-                  <span className="w-1 h-1 bg-muted-foreground rounded-full mr-2" />
-                  {feedback}
+            <ul className="text-xs text-muted-foreground space-y-0.5">
+              {strength.feedback.map((fb, i) => (
+                <li key={i} className="flex items-center gap-1.5">
+                  <span className="size-1 rounded-full bg-muted-foreground shrink-0" />
+                  {fb}
                 </li>
               ))}
             </ul>

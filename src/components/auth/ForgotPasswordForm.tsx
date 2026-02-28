@@ -7,157 +7,87 @@ import { APIBook } from '@/lib/firebase/services';
 import { resetPasswordSchema, type ResetPasswordFormData } from '@/lib/validations/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Mail, CheckCircle, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 
-interface ForgotPasswordFormProps {
-  onSuccess?: () => void;
-  onCancel?: () => void;
-  showBackToLogin?: boolean;
-}
-
-export default function ForgotPasswordForm({ 
-  onSuccess, 
-  onCancel, 
-  showBackToLogin = true 
-}: ForgotPasswordFormProps) {
+export default function ForgotPasswordForm() {
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
 
   const form = useForm<ResetPasswordFormData>({
     resolver: zodResolver(resetPasswordSchema),
-    defaultValues: {
-      email: '',
-    },
+    defaultValues: { email: '' },
   });
 
   const onSubmit = async (data: ResetPasswordFormData) => {
     setLoading(true);
-
     const result = await APIBook.auth.resetPassword(data.email);
-    
-    if (result.success) {
-      setEmailSent(true);
-      
-      // Call success callback after showing success message
-      setTimeout(() => {
-        onSuccess?.();
-      }, 3000);
-    } else {
-      toast.error(result.error || 'Failed to send reset email');
-    }
-    
+    if (result.success) setEmailSent(true);
+    else toast.error(result.error || 'Failed to send reset email');
     setLoading(false);
   };
 
   if (emailSent) {
     return (
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CheckCircle className="h-12 w-12 mx-auto mb-2" />
-          <CardTitle className="title">Reset Email Sent</CardTitle>
-          <CardDescription className="muted">
+      <div className="grid gap-6 text-center">
+        <div className="grid gap-2">
+          <h1 className="text-2xl font-bold tracking-tight">Reset Email Sent</h1>
+          <p className="text-sm text-muted-foreground">
             We&apos;ve sent a password reset link to your email address.
-            Please check your inbox and follow the instructions.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="muted text-center">
-            Didn&apos;t receive the email? Check your spam folder or try again.
-          </div>
-          
-          <div className="flex gap-3">
-            {onCancel && (
-              <Button
-                variant="outline"
-                onClick={onCancel}
-                className="flex-1"
-              >
-                Close
-              </Button>
-            )}
-            {showBackToLogin && (
-              <Link href="/login" className="flex-1">
-                <Button className="w-full">
-                  Back to Login
-                </Button>
-              </Link>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+            Check your inbox and follow the instructions.
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Didn&apos;t receive the email? Check your spam folder or try again.
+        </p>
+        <Link href="/login">
+          <Button className="w-full">Back to Login</Button>
+        </Link>
+      </div>
     );
   }
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="text-center">
-        <Mail className="h-8 w-8 text-primary mx-auto mb-2" />
-        <CardTitle className="title">Reset Password</CardTitle>
-        <CardDescription className="muted">
-          Enter your email address and we&apos;ll send you a link to reset your password.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email Address</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="email"
-                      placeholder="Enter your email address"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+    <div className="grid gap-6">
+      {/* Header */}
+      <div className="grid gap-2 text-center">
+        <h1 className="text-2xl font-bold tracking-tight">Reset Password</h1>
+        <p className="text-sm text-muted-foreground">
+          Enter your email and we&apos;ll send you a reset link
+        </p>
+      </div>
 
-            <div className="flex gap-3 pt-2">
-              {onCancel && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onCancel}
-                  disabled={loading}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-              )}
-              {showBackToLogin && !onCancel && (
-                <Link href="/login" className="flex-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={loading}
-                    className="w-full"
-                  >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Login
-                  </Button>
-                </Link>
-              )}
-              <Button
-                type="submit"
-                disabled={loading}
-                className={onCancel || showBackToLogin ? "flex-1" : "w-full"}
-              >
-                {loading ? 'Sending Email...' : 'Send Reset Email'}
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+      {/* Form */}
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4">
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Email</FormLabel>
+                <FormControl>
+                  <Input type="email" placeholder="you@example.com" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? 'Sending\u2026' : 'Send Reset Email'}
+          </Button>
+        </form>
+      </Form>
+
+      {/* Footer */}
+      <p className="text-center text-sm text-muted-foreground">
+        Remember your password?{' '}
+        <Link href="/login" className="font-medium text-primary underline-offset-4 hover:underline">
+          Sign in
+        </Link>
+      </p>
+    </div>
   );
 }

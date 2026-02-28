@@ -11,11 +11,8 @@ export const metadata: Metadata = {
 export default function LoginPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto" />
-          <p className="mt-4 text-muted-foreground">Loading...</p>
-        </div>
+      <div className="flex items-center justify-center py-12">
+        <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     }>
       <LoginForm />

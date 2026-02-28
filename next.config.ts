@@ -20,6 +20,9 @@ const nextConfig: NextConfig = {
     ],
   },
   
+  // Turbopack (default in Next.js 16) — empty object silences webpack-only warning
+  turbopack: {},
+
   // Experimental features
   experimental: {
     optimizeCss: true,
