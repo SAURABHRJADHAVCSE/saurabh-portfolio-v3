@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "sonner";
+import PwaInstallPrompt from "@/components/PwaInstallPrompt";
 
 // Barlow - For headings (bold, modern)
 const barlow = Barlow({
@@ -78,6 +79,7 @@ export default function RootLayout({
             {children}
           </AuthProvider>
           <Toaster richColors closeButton position="top-right" />
+          <PwaInstallPrompt />
         </ThemeProvider>
       </body>
     </html>

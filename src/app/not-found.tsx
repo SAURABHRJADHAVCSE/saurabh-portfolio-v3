@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Home } from 'lucide-react';
-import GoBackButton from '@/components/GoBackButton';
 
 export default function NotFound() {
   return (
@@ -15,16 +14,13 @@ export default function NotFound() {
             The page you&apos;re looking for doesn&apos;t exist or has been moved.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Button asChild className="w-full sm:w-auto">
-              <Link href="/">
-                <Home className="mr-2 h-4 w-4" />
-                Go Home
-              </Link>
-            </Button>
-            <GoBackButton />
-          </div>
+        <CardContent>
+          <Button asChild className="w-full sm:w-auto">
+            <Link href="/">
+              <Home className="mr-2 h-4 w-4" />
+              Go Home
+            </Link>
+          </Button>
         </CardContent>
       </Card>
     </div>
