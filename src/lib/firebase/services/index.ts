@@ -7,11 +7,10 @@
 export { AuthService } from './auth.service';
 
 // Import payment service
-export { PaymentService } from './payment.service';
 
 // Import types
 export type { AppUser } from './auth.service';
-export type { PaymentRecord } from './payment.service';
+
 export type { ApiResponse } from '../handler';
 
 // Re-export AI adapter for convenience
@@ -20,14 +19,14 @@ export { getAIConfig, getCurrentAIProvider } from '../config/environments';
 export type { IAIAdapter } from '@/lib/ai';
 
 // Re-export LinkedIn Autoposter facade
-export { AutoposterAPI } from '@/lib/linkedin';
+
 
 // Re-export for convenience
 import { AuthService } from './auth.service';
-import { PaymentService } from './payment.service';
+
 import { createAIAdapter } from '@/lib/ai';
 import { getAIConfig } from '../config/environments';
-import { AutoposterAPI } from '@/lib/linkedin';
+
 
 /**
  * Centralized APIBook for Firebase services
@@ -42,8 +41,7 @@ import { AutoposterAPI } from '@/lib/linkedin';
  */
 export const APIBook = {
   auth: AuthService,
-  payment: PaymentService,
-  autoposter: AutoposterAPI,
+
   /** Create an AI adapter instance using the current environment's config */
   createAI: () => createAIAdapter(getAIConfig()),
 } as const;
