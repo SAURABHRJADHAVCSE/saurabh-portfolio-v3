@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 
 /** Dismissed flag persists for the session so the prompt isn't annoying. */
 const DISMISS_KEY = 'pwa-prompt-dismissed';
+/** Installed flag persists across sessions — once installed, never show again. */
+const INSTALLED_KEY = 'pwa-installed';
 /** Delay (ms) before showing the banner after page load. */
 const SHOW_DELAY = 3_000;
 
@@ -16,6 +18,34 @@ const SHOW_DELAY = 3_000;
  */
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
+/**
+ * Detect if the app is already running as an installed PWA.
+ * Covers multiple browsers:
+ *   - `display-mode: standalone`  — Chrome, Edge, Firefox
+ *   - `navigator.standalone`      — Safari on iOS
+ *   - `display-mode: window-controls-overlay` — some PWA variants
+ */
+function isRunningAsInstalledApp(): boolean {
+  // Safari on iOS sets this non-standard property
+  if ('standalone' in navigator && (navigator as Record<string, unknown>).standalone === true) {
+    return true;
+  }
+  // Standard check for display-mode: standalone
+  if (window.matchMedia('(display-mode: standalone)').matches) {
+    return true;
+  }
+  // Some PWAs use window-controls-overlay
+  if (window.matchMedia('(display-mode: window-controls-overlay)').matches) {
+    return true;
+  }
+  // Previously recorded as installed (covers cases where the check above
+  // misses — e.g. user installed via browser but opened in regular tab)
+  if (localStorage.getItem(INSTALLED_KEY) === '1') {
+    return true;
+  }
+  return false;
 }
 
 /** Detect browser for manual-install instructions. */
@@ -44,11 +74,7 @@ export default function PwaInstallPrompt() {
 
   useEffect(() => {
     // Already running as installed PWA or user previously dismissed
-    if (
-      window.matchMedia('(display-mode: standalone)').matches ||
-      sessionStorage.getItem(DISMISS_KEY)
-    )
-      return;
+    if (isRunningAsInstalledApp() || sessionStorage.getItem(DISMISS_KEY)) return;
 
     // Capture the native install event if/when it fires
     const handler = (e: Event) => {
@@ -57,11 +83,21 @@ export default function PwaInstallPrompt() {
     };
     window.addEventListener('beforeinstallprompt', handler);
 
+    // Listen for the 'appinstalled' event — fires AFTER successful install.
+    // Hides the banner immediately and persists the installed flag.
+    const installedHandler = () => {
+      setVisible(false);
+      localStorage.setItem(INSTALLED_KEY, '1');
+      deferredPrompt.current = null;
+    };
+    window.addEventListener('appinstalled', installedHandler);
+
     // Show the banner after a short delay
     const timer = setTimeout(() => setVisible(true), SHOW_DELAY);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('appinstalled', installedHandler);
       clearTimeout(timer);
     };
   }, []);
@@ -75,6 +111,7 @@ export default function PwaInstallPrompt() {
       deferredPrompt.current = null;
       if (outcome === 'accepted') {
         setVisible(false);
+        localStorage.setItem(INSTALLED_KEY, '1');
         return;
       }
       // User dismissed the native prompt — keep banner visible

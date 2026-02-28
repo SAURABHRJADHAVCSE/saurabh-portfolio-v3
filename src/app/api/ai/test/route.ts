@@ -3,9 +3,10 @@
  *
  * Security measures:
  *   - Auth check: only authenticated users
+ *   - Rate limiting: Upstash Redis sliding-window per user
  *   - Input validation: strict types, length limits
  *   - Model whitelist: rejects unknown models (both KieAI AND Gemini)
- *   - imageUrl scheme validation: only gs:// and https:// allowed
+ *   - imageUrl validation: only gs:// and https:// + SSRF private-IP blocking
  *   - Prompt safety pre-filter: blocks known jailbreak / injection patterns
  *   - Audit logging: every request logged with userId, promptHash, status
  *   - Error sanitization: never leaks internal stack traces, SDK URLs, or keys
@@ -14,6 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/server';
+import { checkRateLimit } from '@/lib/rate-limit';
 import {
   createAIAdapter,
   getAIConfig,
@@ -38,6 +40,80 @@ const VALID_IMAGE_SIZES = ['1K', '2K', '4K'];
 const VALID_VIDEO_RESOLUTIONS = ['720p', '1080p', '4k'];
 const VALID_VIDEO_DURATIONS = [4, 6, 8];
 const VALID_IMAGE_URL_SCHEMES = ['gs:', 'https:'];
+
+/** Rate limit: max AI requests per user per window */
+const AI_RATE_LIMIT_MAX = 20;
+const AI_RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+
+// ─── SSRF Protection ─────────────────────────────────────────────────────────
+// Block URLs pointing to private/internal networks to prevent SSRF attacks.
+// Covers: localhost, loopback, link-local, RFC 1918, cloud metadata endpoints.
+
+const SSRF_BLOCKED_HOSTNAMES = new Set([
+  'localhost',
+  '127.0.0.1',
+  '[::1]',
+  '0.0.0.0',
+  'metadata.google.internal',       // GCP metadata
+  'metadata.google',
+  'instance-data',
+]);
+
+/**
+ * Check if a hostname resolves to a private/internal IP range.
+ * Blocks: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 169.254.x.x (link-local),
+ * 100.64-127.x.x (CGNAT), and the AWS/GCP/Azure metadata IP.
+ */
+function isPrivateIp(hostname: string): boolean {
+  // Match IPv4 addresses
+  const ipMatch = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!ipMatch) return false;
+
+  const [, a, b] = ipMatch.map(Number) as [number, number, number, number, number];
+
+  return (
+    a === 10 ||                                    // 10.0.0.0/8
+    (a === 172 && b >= 16 && b <= 31) ||           // 172.16.0.0/12
+    (a === 192 && b === 168) ||                    // 192.168.0.0/16
+    (a === 169 && b === 254) ||                    // 169.254.0.0/16 (link-local / AWS metadata)
+    (a === 100 && b >= 64 && b <= 127) ||          // 100.64.0.0/10 (CGNAT)
+    a === 127 ||                                   // 127.0.0.0/8 (loopback)
+    a === 0                                        // 0.0.0.0/8
+  );
+}
+
+/**
+ * Validate a URL is safe from SSRF — blocks private IPs, metadata endpoints,
+ * and non-allowed schemes.
+ */
+function isSsrfSafe(urlString: string): { safe: boolean; reason?: string } {
+  try {
+    const parsed = new URL(urlString);
+
+    // Scheme check
+    if (!VALID_IMAGE_URL_SCHEMES.includes(parsed.protocol)) {
+      return { safe: false, reason: 'imageUrl must use gs:// or https:// scheme' };
+    }
+
+    // gs:// URLs are GCS bucket references — not network requests from our server
+    if (parsed.protocol === 'gs:') return { safe: true };
+
+    // Hostname blocklist
+    const host = parsed.hostname.toLowerCase();
+    if (SSRF_BLOCKED_HOSTNAMES.has(host)) {
+      return { safe: false, reason: 'imageUrl points to a blocked internal address' };
+    }
+
+    // Private IP check
+    if (isPrivateIp(host)) {
+      return { safe: false, reason: 'imageUrl points to a private/internal network' };
+    }
+
+    return { safe: true };
+  } catch {
+    return { safe: false, reason: 'imageUrl is not a valid URL' };
+  }
+}
 
 type AllowedCapability = (typeof VALID_CAPABILITIES)[number];
 type AllowedProvider = (typeof VALID_PROVIDERS)[number];
@@ -82,6 +158,19 @@ export async function POST(request: NextRequest) {
   // 1. Auth guard
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  // 1a. Rate limit — per user, using Upstash Redis
+  const { allowed, retryAfterSec } = await checkRateLimit(
+    `ai:${user.uid}`,
+    AI_RATE_LIMIT_MAX,
+    AI_RATE_LIMIT_WINDOW_MS,
+  );
+  if (!allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please slow down.' },
+      { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
+    );
+  }
 
   // 2. Parse JSON
   let body: TestRequestBody;
@@ -133,25 +222,18 @@ export async function POST(request: NextRequest) {
     ? body.resolution
     : undefined;
 
-  // 4a. Validate imageUrl scheme — only gs:// and https:// allowed (prevents SSRF)
+  // 4a. Validate imageUrl — scheme check + SSRF protection (block private IPs)
   let imageUrl: string | undefined;
   if (body.imageUrl && typeof body.imageUrl === 'string') {
     const trimmed = body.imageUrl.trim().slice(0, MAX_IMAGE_URL_LENGTH);
-    try {
-      const parsed = new URL(trimmed);
-      if (!VALID_IMAGE_URL_SCHEMES.includes(parsed.protocol)) {
-        return NextResponse.json(
-          { error: 'imageUrl must use gs:// or https:// scheme' },
-          { status: 400 },
-        );
-      }
-      imageUrl = trimmed;
-    } catch {
+    const ssrfCheck = isSsrfSafe(trimmed);
+    if (!ssrfCheck.safe) {
       return NextResponse.json(
-        { error: 'imageUrl is not a valid URL' },
+        { error: ssrfCheck.reason },
         { status: 400 },
       );
     }
+    imageUrl = trimmed;
   }
 
   // 4b. Prompt safety pre-filter — catch jailbreaks / injection before burning an API call

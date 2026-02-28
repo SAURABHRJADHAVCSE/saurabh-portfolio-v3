@@ -107,6 +107,30 @@ const SYSTEM_INSTRUCTION_BLOCKED: Array<[RegExp, string, string]> = [
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
+ * Normalize a string for safety checking.
+ *
+ * Attackers can use Unicode tricks to bypass regex filters:
+ *   - Homoglyphs: replacing Latin chars with Cyrillic look-alikes
+ *   - Zero-width characters: invisible chars inserted between words
+ *   - NFKD decomposition: accented chars that look like ASCII
+ *
+ * This normalizes the input so our regex patterns can match reliably.
+ */
+function normalizeForSafety(input: string): string {
+  return (
+    input
+      // NFKD (compatibility decomposition) — turns ℹ → i, ﬁ → fi, etc.
+      .normalize('NFKD')
+      // Strip zero-width characters (ZWJ, ZWNJ, ZWSP, word joiner, soft hyphen)
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u200B-\u200F\u2028-\u202F\u2060-\u206F\uFEFF\u00AD]/g, '')
+      // Strip combining diacritical marks left after NFKD
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0300-\u036F]/g, '')
+  );
+}
+
+/**
  * Check a user prompt for known jailbreak / injection patterns.
  * Returns `{ safe: true }` if the prompt passes all checks.
  */
@@ -115,8 +139,10 @@ export function checkPromptSafety(prompt: string): PromptCheckResult {
     return { safe: true }; // Empty prompts are handled elsewhere
   }
 
+  const normalized = normalizeForSafety(prompt);
+
   for (const [pattern, rule, reason] of BLOCKED_PATTERNS) {
-    if (pattern.test(prompt)) {
+    if (pattern.test(normalized)) {
       return { safe: false, reason, rule };
     }
   }
@@ -134,16 +160,18 @@ export function checkSystemInstructionSafety(instruction: string): PromptCheckRe
     return { safe: true };
   }
 
+  const normalized = normalizeForSafety(instruction);
+
   // Check system-instruction-specific patterns
   for (const [pattern, rule, reason] of SYSTEM_INSTRUCTION_BLOCKED) {
-    if (pattern.test(instruction)) {
+    if (pattern.test(normalized)) {
       return { safe: false, reason, rule };
     }
   }
 
   // Also check general jailbreak patterns in system instructions
   for (const [pattern, rule, reason] of BLOCKED_PATTERNS) {
-    if (pattern.test(instruction)) {
+    if (pattern.test(normalized)) {
       return { safe: false, reason, rule };
     }
   }

@@ -38,7 +38,7 @@ export { AIAdapterError, CapabilityNotSupportedError } from './types';
 export type { IAIAdapter } from './adapter.interface';
 
 // Factory
-export { createAIAdapter, getAvailableProviders } from './adapter.factory';
+export { createAIAdapter, getAvailableProviders, clearAdapterCache } from './adapter.factory';
 
 // Rate Limiter
 export { RateLimiter, DEFAULT_RATE_LIMITS } from './rate-limiter';

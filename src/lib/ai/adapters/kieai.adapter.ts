@@ -1,5 +1,5 @@
 /**
- * AI Adapter — Kie.AI Implementation (v2)
+ * AI Adapter — Kie.AI Implementation (v3)
  *
  * Kie.AI is an async-task–based provider:
  *   1. POST /api/v1/jobs/createTask  → returns { taskId }
@@ -12,6 +12,8 @@
  *   - Full model catalog (22+ image, 24+ video, 5+ chat models)
  *   - Pricing info attached to every model
  *   - Sliding-window rate limiter (20 req / 10s default)
+ *   - Circuit breaker: trips after 5 consecutive failures, blocks for 60 s
+ *   - Hard timeout: AbortSignal-based timeout on every fetch (60 s)
  *   - Model validation against the catalog
  *
  * Docs: https://docs.kie.ai/
@@ -32,6 +34,8 @@ import type {
 import { AIAdapterError, CapabilityNotSupportedError } from '../types';
 import { RateLimiter, DEFAULT_RATE_LIMITS } from '../rate-limiter';
 import type { RateLimiterConfig, RateLimiterStatus } from '../rate-limiter';
+import { CircuitBreaker } from '../circuit-breaker';
+import type { CircuitBreakerConfig, CircuitBreakerStatus } from '../circuit-breaker';
 import {
   KIE_MODEL_MAP,
   KIE_ALL_MODELS,
@@ -67,6 +71,14 @@ function isFluxModel(modelId: string): boolean {
   return modelId.startsWith('flux');
 }
 
+// ─── Timeouts ────────────────────────────────────────────────────────────────
+
+/** Hard timeout for individual fetch calls (text / createTask / polling) */
+const FETCH_TIMEOUT_MS = 60_000; // 60 seconds
+
+/** Hard timeout for the entire image/video poll loop */
+const POLL_HARD_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
 // ─── Adapter ─────────────────────────────────────────────────────────────────
 
 export class KieAIAdapter implements IAIAdapter {
@@ -78,6 +90,7 @@ export class KieAIAdapter implements IAIAdapter {
   private readonly pollingInterval: number;
   private readonly maxPollingAttempts: number;
   private readonly rateLimiter: RateLimiter;
+  private readonly circuitBreaker: CircuitBreaker;
 
   constructor(config: AIProviderConfig) {
     this.apiKey = config.apiKey;
@@ -92,6 +105,9 @@ export class KieAIAdapter implements IAIAdapter {
     // Initialize rate limiter from config or use provider defaults
     const rlConfig: RateLimiterConfig = config.rateLimit ?? DEFAULT_RATE_LIMITS.kieai;
     this.rateLimiter = new RateLimiter(rlConfig);
+
+    // Circuit breaker — trips after consecutive failures to avoid wasting quota
+    this.circuitBreaker = new CircuitBreaker(config.circuitBreaker);
 
     // Warn (but don't crash) if configured models aren't in the catalog
     this.validateConfiguredModels();
@@ -141,6 +157,13 @@ export class KieAIAdapter implements IAIAdapter {
   }
 
   /**
+   * Check circuit breaker status.
+   */
+  getCircuitBreakerStatus(): CircuitBreakerStatus {
+    return this.circuitBreaker.getStatus();
+  }
+
+  /**
    * Get the currently configured default models.
    */
   getConfiguredModels(): { text: string; image: string; video: string } {
@@ -154,127 +177,164 @@ export class KieAIAdapter implements IAIAdapter {
       throw new CapabilityNotSupportedError('kieai', 'text');
     }
 
-    // Rate limit check
-    await this.rateLimiter.acquire('kieai');
+    this.circuitBreaker.guardRequest('kieai');
 
-    const model = this.models.text;
-    const url = `${KIE_BASE_URL}/${model}/v1/chat/completions`;
+    try {
+      // Rate limit check
+      await this.rateLimiter.acquire('kieai');
 
-    // Build messages array (OpenAI-compatible format used by kie.ai chat models)
-    const messages: Array<{ role: string; content: string }> = [];
+      const model = this.models.text;
+      const url = `${KIE_BASE_URL}/${model}/v1/chat/completions`;
 
-    if (request.systemInstruction) {
-      messages.push({ role: 'system', content: request.systemInstruction });
+      // Build messages array (OpenAI-compatible format used by kie.ai chat models)
+      const messages: Array<{ role: string; content: string }> = [];
+
+      if (request.systemInstruction) {
+        messages.push({ role: 'system', content: request.systemInstruction });
+      }
+      messages.push({ role: 'user', content: request.prompt });
+
+      const body = {
+        messages,
+        stream: false,
+        ...(request.temperature !== undefined && { temperature: request.temperature }),
+        ...(request.maxTokens !== undefined && { max_tokens: request.maxTokens }),
+      };
+
+      const res = await this.fetchJSON<KieChatResponse>(url, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+
+      const content = res.choices?.[0]?.message?.content ?? '';
+
+      this.circuitBreaker.recordSuccess();
+
+      return {
+        text: content,
+        model: res.model ?? model,
+        provider: 'kieai',
+        usage: res.usage
+          ? {
+              promptTokens: res.usage.prompt_tokens,
+              completionTokens: res.usage.completion_tokens,
+              totalTokens: res.usage.total_tokens,
+            }
+          : undefined,
+      };
+    } catch (error) {
+      if (error instanceof AIAdapterError) {
+        this.circuitBreaker.recordFailure();
+        throw error;
+      }
+      this.circuitBreaker.recordFailure();
+      throw this.wrapError(error, 'TEXT_GENERATION_FAILED');
     }
-    messages.push({ role: 'user', content: request.prompt });
-
-    const body = {
-      messages,
-      stream: false,
-      ...(request.temperature !== undefined && { temperature: request.temperature }),
-      ...(request.maxTokens !== undefined && { max_tokens: request.maxTokens }),
-    };
-
-    const res = await this.fetchJSON<KieChatResponse>(url, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
-
-    const content = res.choices?.[0]?.message?.content ?? '';
-
-    return {
-      text: content,
-      model: res.model ?? model,
-      provider: 'kieai',
-      usage: res.usage
-        ? {
-            promptTokens: res.usage.prompt_tokens,
-            completionTokens: res.usage.completion_tokens,
-            totalTokens: res.usage.total_tokens,
-          }
-        : undefined,
-    };
   }
 
   // ── Image Generation ─────────────────────────────────────────────────────
 
   async generateImage(
     request: ImageGenerationRequest,
-    modelOverride?: string,
   ): Promise<ImageGenerationResponse> {
     if (!this.supportsCapability('image')) {
       throw new CapabilityNotSupportedError('kieai', 'image');
     }
 
-    const model = modelOverride ?? this.models.image;
+    const model = this.models.image;
     this.assertValidModel(model, 'image');
 
-    // Rate limit check
-    await this.rateLimiter.acquire('kieai');
+    this.circuitBreaker.guardRequest('kieai');
 
-    const taskBody = {
-      model,
-      input: {
-        prompt: request.prompt,
-        aspect_ratio: request.aspectRatio ?? '1:1',
-        // Flux-2 models require 'resolution' (e.g. '1K', '2K'); other models don't.
-        ...(isFluxModel(model) && { resolution: FLUX_DEFAULT_RESOLUTION }),
-        ...(request.negativePrompt && { negative_prompt: request.negativePrompt }),
-      },
-    };
+    try {
+      // Rate limit check
+      await this.rateLimiter.acquire('kieai');
 
-    const { taskId } = await this.createTask(taskBody);
-    const result = await this.pollUntilDone(taskId);
+      const taskBody = {
+        model,
+        input: {
+          prompt: request.prompt,
+          aspect_ratio: request.aspectRatio ?? '1:1',
+          // Flux-2 models require 'resolution' (e.g. '1K', '2K'); other models don't.
+          ...(isFluxModel(model) && { resolution: FLUX_DEFAULT_RESOLUTION }),
+          ...(request.negativePrompt && { negative_prompt: request.negativePrompt }),
+        },
+      };
 
-    return {
-      images: (result.resultUrls ?? []).map((url) => ({
-        url,
-        mimeType: 'image/png',
-      })),
-      model,
-      provider: 'kieai',
-    };
+      const { taskId } = await this.createTask(taskBody);
+      const result = await this.pollUntilDone(taskId);
+
+      this.circuitBreaker.recordSuccess();
+
+      return {
+        images: (result.resultUrls ?? []).map((url) => ({
+          url,
+          mimeType: 'image/png',
+        })),
+        model,
+        provider: 'kieai',
+      };
+    } catch (error) {
+      if (error instanceof AIAdapterError) {
+        this.circuitBreaker.recordFailure();
+        throw error;
+      }
+      this.circuitBreaker.recordFailure();
+      throw this.wrapError(error, 'IMAGE_GENERATION_FAILED');
+    }
   }
 
   // ── Video Generation ─────────────────────────────────────────────────────
 
   async generateVideo(
     request: VideoGenerationRequest,
-    modelOverride?: string,
   ): Promise<VideoGenerationResponse> {
     if (!this.supportsCapability('video')) {
       throw new CapabilityNotSupportedError('kieai', 'video');
     }
 
-    const model = modelOverride ?? this.models.video;
+    const model = this.models.video;
     this.assertValidModel(model, 'video');
 
-    // Rate limit check
-    await this.rateLimiter.acquire('kieai');
+    this.circuitBreaker.guardRequest('kieai');
 
-    const taskBody = {
-      model,
-      input: {
-        prompt: request.prompt,
-        // Kie.AI requires aspect_ratio — default to 16:9 for video
-        aspect_ratio: request.aspectRatio ?? '16:9',
-        ...(request.imageUrl && { image_url: request.imageUrl }),
-        ...(request.durationSeconds && { duration: String(request.durationSeconds) }),
-        ...(request.negativePrompt && { negative_prompt: request.negativePrompt }),
-      },
-    };
+    try {
+      // Rate limit check
+      await this.rateLimiter.acquire('kieai');
 
-    const { taskId } = await this.createTask(taskBody);
-    const result = await this.pollUntilDone(taskId);
+      const taskBody = {
+        model,
+        input: {
+          prompt: request.prompt,
+          // Kie.AI requires aspect_ratio — default to 16:9 for video
+          aspect_ratio: request.aspectRatio ?? '16:9',
+          ...(request.imageUrl && { image_url: request.imageUrl }),
+          ...(request.durationSeconds && { duration: String(request.durationSeconds) }),
+          ...(request.negativePrompt && { negative_prompt: request.negativePrompt }),
+        },
+      };
 
-    return {
-      videos: (result.resultUrls ?? []).map((url) => ({
-        url,
-        mimeType: 'video/mp4',
-      })),
-      model,
-      provider: 'kieai',
-    };
+      const { taskId } = await this.createTask(taskBody);
+      const result = await this.pollUntilDone(taskId);
+
+      this.circuitBreaker.recordSuccess();
+
+      return {
+        videos: (result.resultUrls ?? []).map((url) => ({
+          url,
+          mimeType: 'video/mp4',
+        })),
+        model,
+        provider: 'kieai',
+      };
+    } catch (error) {
+      if (error instanceof AIAdapterError) {
+        this.circuitBreaker.recordFailure();
+        throw error;
+      }
+      this.circuitBreaker.recordFailure();
+      throw this.wrapError(error, 'VIDEO_GENERATION_FAILED');
+    }
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
@@ -305,9 +365,21 @@ export class KieAIAdapter implements IAIAdapter {
    * GET /api/v1/jobs/recordInfo?taskId=xxx
    * Polls until state === 'success' or 'fail'.
    * Polling calls are NOT rate-limited (they're lightweight status checks).
+   *
+   * Has a hard deadline to prevent infinite polling if the provider hangs.
    */
   private async pollUntilDone(taskId: string): Promise<KiePollResult> {
+    const deadline = Date.now() + POLL_HARD_TIMEOUT_MS;
+
     for (let attempt = 0; attempt < this.maxPollingAttempts; attempt++) {
+      if (Date.now() >= deadline) {
+        throw new AIAdapterError(
+          `Task ${taskId} exceeded hard time limit (${POLL_HARD_TIMEOUT_MS / 1000}s)`,
+          'kieai',
+          'TASK_TIMEOUT',
+        );
+      }
+
       const res = await this.fetchJSON<KiePollResponse>(
         `${KIE_POLL_ENDPOINT}?taskId=${taskId}`,
         { method: 'GET' },
@@ -316,9 +388,19 @@ export class KieAIAdapter implements IAIAdapter {
       const state: TaskState = res.data?.state as TaskState;
 
       if (state === 'success') {
-        const parsed = res.data?.resultJson
-          ? (JSON.parse(res.data.resultJson) as { resultUrls?: string[] })
-          : { resultUrls: [] };
+        // Safely parse resultJson — may be malformed
+        let parsed: { resultUrls?: string[] } = { resultUrls: [] };
+        if (res.data?.resultJson) {
+          try {
+            parsed = JSON.parse(res.data.resultJson) as { resultUrls?: string[] };
+          } catch {
+            throw new AIAdapterError(
+              `Task ${taskId} returned invalid result JSON`,
+              'kieai',
+              'INVALID_RESULT',
+            );
+          }
+        }
 
         return { state: 'success', resultUrls: parsed.resultUrls ?? [] };
       }
@@ -376,16 +458,20 @@ export class KieAIAdapter implements IAIAdapter {
     // If model is not in the catalog at all, we allow it through (might be new)
   }
 
-  /** Generic fetch wrapper with auth headers */
+  /** Generic fetch wrapper with auth headers and hard timeout */
   private async fetchJSON<T>(url: string, init: RequestInit): Promise<T> {
-    const response = await fetch(url, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-        ...(init.headers as Record<string, string>),
-      },
-    });
+    const response = await this.withTimeout(
+      fetch(url, {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+          ...(init.headers as Record<string, string>),
+        },
+      }),
+      FETCH_TIMEOUT_MS,
+      `Request to ${new URL(url).pathname} timed out`,
+    );
 
     if (!response.ok) {
       // Handle rate limit responses from the server itself
@@ -408,6 +494,51 @@ export class KieAIAdapter implements IAIAdapter {
     }
 
     return (await response.json()) as T;
+  }
+
+  /**
+   * Race a promise against a hard timeout.
+   * Prevents any single fetch call from hanging forever.
+   */
+  private withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new AIAdapterError(message, 'kieai', 'TIMEOUT')),
+        ms,
+      );
+      promise
+        .then((val) => { clearTimeout(timer); resolve(val); })
+        .catch((err) => { clearTimeout(timer); reject(err); });
+    });
+  }
+
+  /**
+   * Wrap an unknown error into a sanitized AIAdapterError.
+   * Strips SDK internals, internal URLs, and sensitive details.
+   */
+  private wrapError(error: unknown, code: string): AIAdapterError {
+    if (error instanceof AIAdapterError) return error;
+
+    const raw = error instanceof Error ? error.message : String(error);
+    const sanitized = this.sanitizeMessage(raw);
+    return new AIAdapterError(sanitized, 'kieai', code);
+  }
+
+  /**
+   * Remove internal details from error messages before they reach the user.
+   */
+  private sanitizeMessage(message: string): string {
+    return message
+      // Windows paths
+      .replace(/[A-Za-z]:\\[^\s]*/g, '[path]')
+      // Unix paths
+      .replace(/(?:^|\s)\/(?:home|usr|var|tmp|etc|opt)[^\s]*/g, ' [path]')
+      // Internal API URLs
+      .replace(/https?:\/\/api\.kie\.ai[^\s]*/gi, '[internal-url]')
+      // API key values
+      .replace(/Bearer\s+[A-Za-z0-9_.-]{20,}/g, 'Bearer [redacted]')
+      // Truncate
+      .slice(0, 500);
   }
 
   private sleep(ms: number): Promise<void> {

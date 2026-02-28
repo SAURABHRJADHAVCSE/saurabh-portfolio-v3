@@ -75,7 +75,7 @@
  *   • `api:${ip}`      — general API endpoints
  *
  * Upstash API Key (for reference):
- * 5a06d75b-ea4d-4a18-a029-25d94fergfregreaa9db06
+ * 
  *
  * TESTING THE RATE LIMITER
  * ────────────────────────
