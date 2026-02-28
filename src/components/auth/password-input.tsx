@@ -13,6 +13,8 @@ interface PasswordInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   showStrength?: boolean;
+  /** Email to check against for password similarity (prevents using email as password) */
+  email?: string;
   className?: string;
   id?: string;
 }
@@ -25,13 +27,14 @@ export default function PasswordInput({
   onChange, 
   placeholder = "Enter your password",
   showStrength = false,
+  email,
   className,
   id 
 }: PasswordInputProps) {
   const [showPassword, setShowPassword] = useState(false);
   
-  // Calculate password strength
-  const strength = showStrength ? checkPasswordStrength(value) : null;
+  // Calculate password strength (pass email to detect email-as-password)
+  const strength = showStrength ? checkPasswordStrength(value, email) : null;
   
   // Get strength color and label
   const getStrengthInfo = (score: number) => {

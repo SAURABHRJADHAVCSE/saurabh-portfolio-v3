@@ -6,11 +6,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { APIBook } from '@/lib/firebase/services';
 import { changePasswordSchema, type ChangePasswordFormData } from '@/lib/validations/auth';
 import { Button } from '@/components/ui/button';
-import PasswordInput from '@/components/ui/password-input';
+import PasswordInput from '@/components/auth/password-input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { CheckCircle, Lock } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ChangePasswordFormProps {
   onSuccess?: () => void;
@@ -18,6 +19,7 @@ interface ChangePasswordFormProps {
 }
 
 export default function ChangePasswordForm({ onSuccess, onCancel }: ChangePasswordFormProps) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -115,6 +117,7 @@ export default function ChangePasswordForm({ onSuccess, onCancel }: ChangePasswo
                       onChange={field.onChange}
                       placeholder="Enter your new password"
                       showStrength={true}
+                      email={user?.email ?? ''}
                     />
                   </FormControl>
                   <FormMessage />

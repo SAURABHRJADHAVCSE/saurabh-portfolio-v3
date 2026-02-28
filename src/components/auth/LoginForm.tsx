@@ -9,7 +9,7 @@ import { loginSchema, type LoginFormData } from '@/lib/validations/auth';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import PasswordInput from '@/components/ui/password-input';
+import PasswordInput from '@/components/auth/password-input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';

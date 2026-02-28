@@ -61,6 +61,19 @@ export const signupSchema = z.object({
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
+}).refine((data) => {
+  const lowerPwd = data.password.toLowerCase();
+  const lowerEmail = data.email.toLowerCase();
+  const emailLocal = lowerEmail.split('@')[0];
+  // Block if password IS the email, contains the email, or contains the local-part (≥4 chars)
+  if (lowerPwd === lowerEmail || lowerPwd.includes(lowerEmail)) return false;
+  if (emailLocal.length >= 4 && lowerPwd.includes(emailLocal)) return false;
+  // Block if password looks like any email address
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.password)) return false;
+  return true;
+}, {
+  message: 'Password must not contain your email address or username',
+  path: ['password'],
 });
 
 // Password reset form validation schema

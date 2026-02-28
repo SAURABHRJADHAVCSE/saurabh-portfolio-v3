@@ -37,13 +37,38 @@ export const AUTH_CONFIG: AuthConfig = {
 /**
  * Password strength checker
  */
-export const checkPasswordStrength = (password: string) => {
+export const checkPasswordStrength = (password: string, email?: string) => {
   const { passwordRequirements } = AUTH_CONFIG;
   const strength = {
     score: 0,
     feedback: [] as string[],
     isValid: password.length >= passwordRequirements.minLength,
   };
+
+  // ── Penalty: password is (or contains) the user's email ──
+  if (email) {
+    const lowerPwd = password.toLowerCase();
+    const lowerEmail = email.toLowerCase();
+    const emailLocal = lowerEmail.split('@')[0]; // part before @
+
+    if (lowerPwd === lowerEmail || lowerPwd.includes(lowerEmail)) {
+      strength.feedback.push('Password must not be your email address');
+      strength.isValid = false;
+      return strength; // score stays 0 → Weak
+    }
+    if (emailLocal.length >= 4 && lowerPwd.includes(emailLocal)) {
+      strength.feedback.push('Password should not contain your email username');
+      strength.isValid = false;
+      return strength; // score stays 0 → Weak
+    }
+  }
+
+  // ── Penalty: password looks like an email address ──
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(password)) {
+    strength.feedback.push('Password should not be an email address');
+    strength.isValid = false;
+    return strength; // score stays 0 → Weak
+  }
 
   // Length check
   if (password.length >= passwordRequirements.minLength) {
