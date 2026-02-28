@@ -11,19 +11,18 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { LogOut, Mail, User, Calendar, CheckCircle, AlertCircle, Settings, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 export default function UserProfile() {
   const { user } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [logoutError, setLogoutError] = useState('');
 
   const handleLogout = async () => {
     setLoggingOut(true);
-    setLogoutError('');
     
     const result = await APIBook.auth.signOut();
     if (!result.success) {
-      setLogoutError(result.error || 'Logout failed');
+      toast.error(result.error || 'Logout failed');
       setLoggingOut(false);
     }
     // If successful, the auth context will handle the state change
@@ -55,13 +54,6 @@ export default function UserProfile() {
 
   return (
     <div className="space-y-6">
-      {logoutError && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{logoutError}</AlertDescription>
-        </Alert>
-      )}
-
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">

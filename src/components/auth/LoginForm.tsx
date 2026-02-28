@@ -10,21 +10,21 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PasswordInput from '@/components/ui/password-input';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
-import { Mail, AlertCircle, CheckCircle } from 'lucide-react';
+import { Mail } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 export default function LoginForm() {
   const [emailLoading, setEmailLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
   // Prevents the isAuthenticated effect from double-navigating when
   // onSubmit has already called router.replace.
   const isRedirectingRef = useRef(false);
+  /** Guard against React Strict Mode double-firing the toast */
+  const toastShownRef = useRef(false);
   
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -33,8 +33,9 @@ export default function LoginForm() {
   // Show any ?message= query param (e.g. from post-signup redirect)
   useEffect(() => {
     const message = searchParams.get('message');
-    if (message) {
-      setSuccessMessage(decodeURIComponent(message));
+    if (message && !toastShownRef.current) {
+      toastShownRef.current = true;
+      toast.success(decodeURIComponent(message));
       window.history.replaceState({}, '', window.location.pathname);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,7 +61,6 @@ export default function LoginForm() {
 
   const onSubmit = async (data: LoginFormData) => {
     setEmailLoading(true);
-    setError('');
 
     const result = await APIBook.auth.loginWithEmail(data.email, data.password);
     
@@ -69,7 +69,7 @@ export default function LoginForm() {
       const redirectTo = searchParams.get('redirect') || '/profile';
       router.replace(redirectTo);
     } else {
-      setError(result.error || 'Login failed');
+      toast.error(result.error || 'Login failed');
     }
     
     setEmailLoading(false);
@@ -77,7 +77,6 @@ export default function LoginForm() {
 
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
-    setError('');
 
     const result = await APIBook.auth.loginWithGoogle();
     
@@ -86,7 +85,7 @@ export default function LoginForm() {
       const redirectTo = searchParams.get('redirect') || '/profile';
       router.replace(redirectTo);
     } else {
-      setError(result.error || 'Google login failed');
+      toast.error(result.error || 'Google login failed');
     }
     
     setGoogleLoading(false);
@@ -102,20 +101,6 @@ export default function LoginForm() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {successMessage && (
-            <Alert className="mb-4">
-              <CheckCircle className="h-4 w-4" />
-              <AlertDescription>{successMessage}</AlertDescription>
-            </Alert>
-          )}
-          
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
@@ -129,7 +114,6 @@ export default function LoginForm() {
                         type="email"
                         placeholder="Enter your email"
                         {...field}
-                        id="login-email"
                       />
                     </FormControl>
                     <FormMessage />
@@ -148,7 +132,6 @@ export default function LoginForm() {
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="Enter your password"
-                        id="login-password"
                       />
                     </FormControl>
                     <FormMessage />

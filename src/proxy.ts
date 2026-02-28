@@ -126,10 +126,11 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization)
      * - _next/webpack-hmr (hot reload)
-     * - favicon.ico, robots.txt, sitemap.xml
-     * - manifest.json (PWA manifest)
+     * - favicon.ico, icon, apple-icon (auto-generated metadata)
+     * - robots.txt, sitemap.xml (SEO metadata)
+     * - manifest.webmanifest (PWA manifest — auto-served by app/manifest.ts)
      * - public files (images, fonts, etc.)
      */
-    '/((?!api/|_next/static|_next/image|_next/webpack-hmr|favicon.ico|robots.txt|sitemap.xml|manifest.json|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot)).*)',
+    '/((?!api/|_next/static|_next/image|_next/webpack-hmr|favicon\\.ico|icon|apple-icon|robots\\.txt|sitemap\\.xml|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot)).*)',
   ],
 };

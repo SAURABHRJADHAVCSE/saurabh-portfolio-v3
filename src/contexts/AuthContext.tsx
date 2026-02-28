@@ -40,10 +40,34 @@ interface AuthProviderProps {
 /** How often to proactively refresh the session cookie (4 hours — session cookies last 5 days) */
 const TOKEN_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
+/**
+ * Read the CSRF double-submit cookie value.
+ * Returns null if not yet set (GET /api/auth/session will issue one).
+ */
+function getCsrfToken(): string | null {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Ensure a CSRF token cookie exists by calling GET /api/auth/session.
+ * Subsequent calls are no-ops if the cookie is already present.
+ */
+async function ensureCsrfToken(): Promise<string | null> {
+  if (getCsrfToken()) return getCsrfToken();
+  try {
+    await fetch('/api/auth/session', { method: 'GET' });
+  } catch { /* ignore */ }
+  return getCsrfToken();
+}
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Tracks whether we've ever seen a logged-in user this session.
+   *  Prevents a pointless DELETE on initial load when nobody is signed in. */
+  const hadUserRef = useRef(false);
 
   /**
    * Sync the Firebase ID token to the server-side httpOnly session cookie.
@@ -53,28 +77,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
    */
   const syncSession = useCallback(async (firebaseUser: User | null): Promise<boolean> => {
     try {
+      const csrfToken = await ensureCsrfToken();
+      const csrfHeaders: Record<string, string> = csrfToken
+        ? { 'x-csrf-token': csrfToken }
+        : {};
+
       if (firebaseUser) {
         const token = await firebaseUser.getIdToken(/* forceRefresh */ true);
         const res = await fetch('/api/auth/session', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...csrfHeaders },
           body: JSON.stringify({ token }),
         });
 
         if (!res.ok) {
-          // Server rejected the token (Admin SDK not configured, token revoked
-          // etc.). Sign out client-side so both sides agree: unauthenticated.
-          // We return false so the caller skips setLoading(false) — the
-          // resulting onAuthStateChanged(null) will set loading=false properly,
-          // avoiding a flash where loading=false + isAuthenticated=true with
-          // no cookie, which would restart the redirect loop.
           console.warn(`[Auth] Session sync failed (${res.status}) — signing out to stay in sync with server.`);
           await signOut(auth);
           return false;
         }
+        hadUserRef.current = true;
         return true;
       } else {
-        await fetch('/api/auth/session', { method: 'DELETE' });
+        // Only call DELETE if we previously had a session, otherwise it's
+        // a no-op initial load with nobody signed in.
+        if (hadUserRef.current) {
+          hadUserRef.current = false;
+          await fetch('/api/auth/session', { method: 'DELETE', headers: csrfHeaders });
+        }
         return true;
       }
     } catch {
@@ -109,12 +138,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Set up proactive token refresh while logged in
       if (firebaseUser) {
         refreshTimerRef.current = setInterval(async () => {
-          // getIdToken(true) forces a fresh token from Firebase
           try {
             const freshToken = await firebaseUser.getIdToken(/* forceRefresh */ true);
+            const csrf = getCsrfToken();
             await fetch('/api/auth/session', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                ...(csrf ? { 'x-csrf-token': csrf } : {}),
+              },
               body: JSON.stringify({ token: freshToken }),
             });
           } catch {

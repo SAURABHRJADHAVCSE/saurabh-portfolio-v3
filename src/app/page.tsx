@@ -1,5 +1,18 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: 'Home',
+  description:
+    'Production-ready Next.js starter with Firebase Auth, AI adapters, and shadcn/ui.',
+  openGraph: {
+    title: 'Home',
+    description:
+      'Production-ready Next.js starter with Firebase Auth, AI adapters, and shadcn/ui.',
+  },
+};
 
 const features = [
   {
@@ -71,7 +84,8 @@ const features = [
 export default function Home() {
   return (
     <div className="min-h-screen p-6 sm:p-8 max-w-5xl mx-auto">
-      <header className="text-center mb-12">
+      <header className="text-center mb-12 relative">
+        <div className="absolute top-0 right-0"><ThemeToggle /></div>
         <h1 className="heading">Next.js Starter Template</h1>
         <p className="muted max-w-2xl mx-auto">
           Production-ready foundation with Firebase Auth, AI adapters,

@@ -7,10 +7,10 @@ import { APIBook } from '@/lib/firebase/services';
 import { changePasswordSchema, type ChangePasswordFormData } from '@/lib/validations/auth';
 import { Button } from '@/components/ui/button';
 import PasswordInput from '@/components/ui/password-input';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { AlertCircle, CheckCircle, Lock } from 'lucide-react';
+import { CheckCircle, Lock } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface ChangePasswordFormProps {
   onSuccess?: () => void;
@@ -19,7 +19,6 @@ interface ChangePasswordFormProps {
 
 export default function ChangePasswordForm({ onSuccess, onCancel }: ChangePasswordFormProps) {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
   const form = useForm<ChangePasswordFormData>({
@@ -33,13 +32,13 @@ export default function ChangePasswordForm({ onSuccess, onCancel }: ChangePasswo
 
   const onSubmit = async (data: ChangePasswordFormData) => {
     setLoading(true);
-    setError('');
     setSuccess(false);
 
     const result = await APIBook.auth.changePassword(data.currentPassword, data.newPassword);
     
     if (result.success) {
       setSuccess(true);
+      toast.success('Password changed successfully');
       form.reset();
       
       // Call success callback after showing success message
@@ -47,7 +46,7 @@ export default function ChangePasswordForm({ onSuccess, onCancel }: ChangePasswo
         onSuccess?.();
       }, 2000);
     } else {
-      setError(result.error || 'Failed to change password');
+      toast.error(result.error || 'Failed to change password');
     }
     
     setLoading(false);
@@ -84,13 +83,6 @@ export default function ChangePasswordForm({ onSuccess, onCancel }: ChangePasswo
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
@@ -104,7 +96,6 @@ export default function ChangePasswordForm({ onSuccess, onCancel }: ChangePasswo
                       value={field.value}
                       onChange={field.onChange}
                       placeholder="Enter your current password"
-                      id="current-password-input"
                     />
                   </FormControl>
                   <FormMessage />
@@ -124,7 +115,6 @@ export default function ChangePasswordForm({ onSuccess, onCancel }: ChangePasswo
                       onChange={field.onChange}
                       placeholder="Enter your new password"
                       showStrength={true}
-                      id="new-password-input"
                     />
                   </FormControl>
                   <FormMessage />
@@ -143,7 +133,6 @@ export default function ChangePasswordForm({ onSuccess, onCancel }: ChangePasswo
                       value={field.value}
                       onChange={field.onChange}
                       placeholder="Confirm your new password"
-                      id="confirm-new-password-input"
                     />
                   </FormControl>
                   <FormMessage />

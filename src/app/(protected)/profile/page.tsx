@@ -14,6 +14,7 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Profile',
   description: 'Manage your account settings and preferences',
+  openGraph: { title: 'Profile', description: 'Manage your account settings and preferences' },
 };
 
 export default async function ProfilePage() {

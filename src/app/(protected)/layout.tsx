@@ -4,7 +4,7 @@ import AppShell from '@/components/layout/AppShell';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Dashboard',
+  title: 'Account',
   description: 'Manage your account and settings',
 };
 

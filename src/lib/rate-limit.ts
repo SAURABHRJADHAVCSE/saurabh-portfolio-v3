@@ -1,52 +1,24 @@
 /**
- * In-Memory Rate Limiter
+ * Rate Limiter — Upstash Redis (production) / In-Memory (development)
  *
- * A simple fixed-window rate limiter for server-side API routes.
- * Keyed by any string (IP address, user ID, route, etc.).
+ * On Vercel, uses @upstash/ratelimit + @upstash/redis for a distributed
+ * sliding-window rate limiter that survives cold starts and works across
+ * all serverless instances.
  *
- * ⚠️  NOTE: This implementation stores state in-process.
- *     It resets on every cold start / deployment and does NOT
- *     work across multiple server instances.
- *
- *     For production multi-instance deployments (e.g. Vercel with
- *     >1 region or Lambda cold starts), replace with a Redis-backed
- *     solution such as @upstash/ratelimit + @upstash/redis.
+ * Falls back to an in-memory fixed-window limiter when the UPSTASH env
+ * vars are not set (local development).
  *
  * Usage:
  * ```ts
- * const { allowed, retryAfterSec } = checkRateLimit(`auth:${ip}`, 10, 60_000);
+ * const { allowed, retryAfterSec } = await checkRateLimit(`auth:${ip}`, 10, 60_000);
  * if (!allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
  * ```
  */
 
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
-}
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
-// Module-level map — persists across requests within the same server process
-const store = new Map<string, RateLimitEntry>();
-
-// Warn once per cold start in production so operators don't forget to switch
-// to a distributed store (e.g. @upstash/ratelimit + @upstash/redis).
-if (process.env.NODE_ENV === 'production') {
-  console.warn(
-    '[RateLimit] ⚠️  Using in-memory rate limiter. State resets on every ' +
-    'cold start and is NOT shared across serverless instances. ' +
-    'For production, migrate to @upstash/ratelimit with @upstash/redis.',
-  );
-}
-
-// Periodically evict expired entries to prevent unbounded memory growth.
-// Runs every 5 minutes if the module is alive.
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of store.entries()) {
-      if (now >= entry.resetAt) store.delete(key);
-    }
-  }, 5 * 60 * 1000);
-}
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface RateLimitResult {
   /** Whether the request is allowed. */
@@ -57,6 +29,67 @@ export interface RateLimitResult {
   remaining: number;
 }
 
+// ─── Upstash (production) ────────────────────────────────────────────────────
+
+const useUpstash = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+
+/**
+ * Cache of Ratelimit instances keyed by `${maxRequests}:${windowMs}` so we
+ * don't create a new one on every call.
+ */
+const upstashLimiters = new Map<string, Ratelimit>();
+
+function getUpstashLimiter(maxRequests: number, windowMs: number): Ratelimit {
+  const cacheKey = `${maxRequests}:${windowMs}`;
+  let limiter = upstashLimiters.get(cacheKey);
+  if (!limiter) {
+    limiter = new Ratelimit({
+      redis: Redis.fromEnv(),
+      limiter: Ratelimit.slidingWindow(maxRequests, `${windowMs} ms`),
+      analytics: true,
+      prefix: 'ratelimit',
+    });
+    upstashLimiters.set(cacheKey, limiter);
+  }
+  return limiter;
+}
+
+// ─── In-Memory fallback (development) ────────────────────────────────────────
+
+interface MemoryEntry {
+  count: number;
+  resetAt: number;
+}
+
+const memoryStore = new Map<string, MemoryEntry>();
+
+// Periodically evict expired entries (dev only)
+if (!useUpstash && typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of memoryStore.entries()) {
+      if (now >= entry.resetAt) memoryStore.delete(key);
+    }
+  }, 5 * 60 * 1000);
+}
+
+function checkMemory(key: string, maxRequests: number, windowMs: number): RateLimitResult {
+  const now = Date.now();
+  const entry = memoryStore.get(key);
+
+  if (!entry || now >= entry.resetAt) {
+    memoryStore.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true, retryAfterSec: 0, remaining: maxRequests - 1 };
+  }
+  if (entry.count >= maxRequests) {
+    return { allowed: false, retryAfterSec: Math.ceil((entry.resetAt - now) / 1000), remaining: 0 };
+  }
+  entry.count += 1;
+  return { allowed: true, retryAfterSec: 0, remaining: maxRequests - entry.count };
+}
+
+// ─── Public API ──────────────────────────────────────────────────────────────
+
 /**
  * Check and increment the rate limit counter for a given key.
  *
@@ -64,29 +97,19 @@ export interface RateLimitResult {
  * @param maxRequests - Max requests allowed per window
  * @param windowMs    - Window duration in milliseconds
  */
-export function checkRateLimit(
+export async function checkRateLimit(
   key: string,
   maxRequests: number,
   windowMs: number,
-): RateLimitResult {
-  const now = Date.now();
-  const entry = store.get(key);
-
-  // No entry or window has expired — start a fresh window
-  if (!entry || now >= entry.resetAt) {
-    store.set(key, { count: 1, resetAt: now + windowMs });
-    return { allowed: true, retryAfterSec: 0, remaining: maxRequests - 1 };
-  }
-
-  // Within window — check quota
-  if (entry.count >= maxRequests) {
+): Promise<RateLimitResult> {
+  if (useUpstash) {
+    const limiter = getUpstashLimiter(maxRequests, windowMs);
+    const { success, remaining, reset } = await limiter.limit(key);
     return {
-      allowed: false,
-      retryAfterSec: Math.ceil((entry.resetAt - now) / 1000),
-      remaining: 0,
+      allowed: success,
+      retryAfterSec: success ? 0 : Math.ceil((reset - Date.now()) / 1000),
+      remaining,
     };
   }
-
-  entry.count += 1;
-  return { allowed: true, retryAfterSec: 0, remaining: maxRequests - entry.count };
+  return checkMemory(key, maxRequests, windowMs);
 }

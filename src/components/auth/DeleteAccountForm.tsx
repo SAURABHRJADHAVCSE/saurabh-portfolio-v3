@@ -15,11 +15,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Trash2, AlertTriangle, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 export default function DeleteAccountForm() {
   const { user } = useAuth();
   const [isDeleting, setIsDeleting] = useState(false);
-  const [error, setError] = useState('');
   const [showConfirmation, setShowConfirmation] = useState(false);
 
   const form = useForm<DeleteAccountFormData>({
@@ -34,7 +34,6 @@ export default function DeleteAccountForm() {
 
   const handleDeleteAccount = async (data: DeleteAccountFormData) => {
     setIsDeleting(true);
-    setError('');
 
     try {
       const result = await APIBook.auth.deleteAccount(isGoogleUser ? undefined : data.password);
@@ -45,10 +44,10 @@ export default function DeleteAccountForm() {
         window.location.href = '/login?message=Account deleted successfully';
         return; // Prevent further execution
       } else {
-        setError(result.error || 'Failed to delete account');
+        toast.error(result.error || 'Failed to delete account');
       }
     } catch (err) {
-      setError('An unexpected error occurred');
+      toast.error('An unexpected error occurred');
     } finally {
       setIsDeleting(false);
     }
@@ -56,7 +55,6 @@ export default function DeleteAccountForm() {
 
   const handleGoogleReauth = async () => {
     setIsDeleting(true);
-    setError('');
 
     try {
       // For Google users, the re-authentication happens inside the deleteAccount method
@@ -66,10 +64,10 @@ export default function DeleteAccountForm() {
         window.location.href = '/login?message=Account deleted successfully';
         return; // Prevent further execution
       } else {
-        setError(result.error || 'Failed to delete account');
+        toast.error(result.error || 'Failed to delete account');
       }
     } catch (err) {
-      setError('Failed to delete account. Please try again.');
+      toast.error('Failed to delete account. Please try again.');
     } finally {
       setIsDeleting(false);
     }
@@ -160,13 +158,6 @@ export default function DeleteAccountForm() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
           {isGoogleUser ? (
             <div className="space-y-4">
               <Alert variant="destructive">

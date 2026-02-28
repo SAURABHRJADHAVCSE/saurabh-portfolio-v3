@@ -2,8 +2,9 @@ import { Metadata } from 'next';
 import { AITestClient } from '@/components/ai-test/AITestClient';
 
 export const metadata: Metadata = {
-  title: 'AI Model Tester — LinkedIn Automation',
+  title: 'AI Model Tester',
   description: 'Interactively test text, image, and video generation across AI providers.',
+  openGraph: { title: 'AI Model Tester', description: 'Test text, image, and video generation across AI providers.' },
 };
 
 export default function AITestPage() {

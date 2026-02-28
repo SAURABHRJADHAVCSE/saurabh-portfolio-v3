@@ -7,11 +7,11 @@ import { APIBook } from '@/lib/firebase/services';
 import { resetPasswordSchema, type ResetPasswordFormData } from '@/lib/validations/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Mail, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Mail, CheckCircle, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 interface ForgotPasswordFormProps {
   onSuccess?: () => void;
@@ -25,7 +25,6 @@ export default function ForgotPasswordForm({
   showBackToLogin = true 
 }: ForgotPasswordFormProps) {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [emailSent, setEmailSent] = useState(false);
 
   const form = useForm<ResetPasswordFormData>({
@@ -37,20 +36,18 @@ export default function ForgotPasswordForm({
 
   const onSubmit = async (data: ResetPasswordFormData) => {
     setLoading(true);
-    setError('');
 
     const result = await APIBook.auth.resetPassword(data.email);
     
     if (result.success) {
       setEmailSent(true);
-      setError('');
       
       // Call success callback after showing success message
       setTimeout(() => {
         onSuccess?.();
       }, 3000);
     } else {
-      setError(result.error || 'Failed to send reset email');
+      toast.error(result.error || 'Failed to send reset email');
     }
     
     setLoading(false);
@@ -105,13 +102,6 @@ export default function ForgotPasswordForm({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
@@ -125,7 +115,6 @@ export default function ForgotPasswordForm({
                       type="email"
                       placeholder="Enter your email address"
                       {...field}
-                      id="forgot-password-email"
                     />
                   </FormControl>
                   <FormMessage />

@@ -10,18 +10,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PasswordInput from '@/components/ui/password-input';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
-import { Mail, User, AlertCircle, CheckCircle } from 'lucide-react';
+import { Mail, User } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 export default function SignupForm() {
   const [emailLoading, setEmailLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   const router = useRouter();
   const { isAuthenticated, loading } = useAuth();
@@ -45,20 +43,14 @@ export default function SignupForm() {
 
   const onSubmit = async (data: SignupFormData) => {
     setEmailLoading(true);
-    setError('');
-    setSuccess('');
 
     const result = await APIBook.auth.registerWithEmail(data.email, data.password, data.displayName);
     
     if (result.success) {
-      // Firebase auto-signs the user in after registration.
-      // AuthContext will detect the new user, sync the session cookie,
-      // set isAuthenticated=true, and the useEffect above will redirect
-      // to /profile automatically.
-      setSuccess('Account created! Redirecting…');
+      toast.success('Account created! Redirecting…');
       form.reset();
     } else {
-      setError(result.error || 'Signup failed');
+      toast.error(result.error || 'Signup failed');
     }
     
     setEmailLoading(false);
@@ -66,15 +58,13 @@ export default function SignupForm() {
 
   const handleGoogleSignup = async () => {
     setGoogleLoading(true);
-    setError('');
-    setSuccess('');
 
     const result = await APIBook.auth.loginWithGoogle();
     
     if (result.success) {
       router.replace('/profile');
     } else {
-      setError(result.error || 'Google signup failed');
+      toast.error(result.error || 'Google signup failed');
     }
     
     setGoogleLoading(false);
@@ -90,20 +80,6 @@ export default function SignupForm() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {success && (
-            <Alert className="mb-4">
-              <CheckCircle className="h-4 w-4" />
-              <AlertDescription>{success}</AlertDescription>
-            </Alert>
-          )}
-
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
@@ -111,12 +87,11 @@ export default function SignupForm() {
                 name="displayName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel htmlFor="signup-displayName">Display Name (Optional)</FormLabel>
+                    <FormLabel>Display Name (Optional)</FormLabel>
                     <FormControl>
                       <div className="relative">
                         <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                         <Input 
-                          id="signup-displayName"
                           placeholder="Enter your full name" 
                           className="pl-10" 
                           {...field} 
@@ -133,12 +108,11 @@ export default function SignupForm() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel htmlFor="signup-email">Email</FormLabel>
+                    <FormLabel>Email</FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                         <Input 
-                          id="signup-email"
                           placeholder="Enter your email" 
                           className="pl-10" 
                           {...field} 
@@ -155,10 +129,9 @@ export default function SignupForm() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel htmlFor="signup-password">Password</FormLabel>
+                    <FormLabel>Password</FormLabel>
                     <FormControl>
                       <PasswordInput
-                        id="signup-password"
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="Enter your password (min 6 characters)"
@@ -175,10 +148,9 @@ export default function SignupForm() {
                 name="confirmPassword"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel htmlFor="signup-confirmPassword">Confirm Password</FormLabel>
+                    <FormLabel>Confirm Password</FormLabel>
                     <FormControl>
                       <PasswordInput
-                        id="signup-confirmPassword"
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="Confirm your password"

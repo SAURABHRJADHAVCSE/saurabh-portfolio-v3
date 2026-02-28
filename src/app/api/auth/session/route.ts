@@ -2,10 +2,10 @@
  * API Route: Set/Clear Authentication Session Cookie
  *
  * Security:
- *   - CSRF protection via Origin / Referer header check
+ *   - CSRF protection via double-submit cookie + Origin/Referer check
  *   - Token is verified server-side with Firebase Admin SDK before setting cookie
- *   - Only the raw ID token is stored (no userData cookie)
- *   - server.ts re-verifies the token on every request via getCurrentUser()
+ *   - Session cookie is created with Firebase Admin createSessionCookie()
+ *   - server.ts re-verifies the session cookie on every request via getCurrentUser()
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -17,7 +17,21 @@ import { checkRateLimit } from '@/lib/rate-limit';
 /** Session cookie expiry: 5 days (must match AUTH_COOKIE_OPTIONS.maxAge) */
 const SESSION_COOKIE_EXPIRY_MS = 5 * 24 * 60 * 60 * 1000;
 
+/** CSRF cookie name — client reads this and sends it back as a header */
+const CSRF_COOKIE = 'csrf_token';
+/** CSRF header name — must match the cookie value */
+const CSRF_HEADER = 'x-csrf-token';
+
 // ─── CSRF Helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Generate a cryptographically random CSRF token (hex string).
+ */
+function generateCsrfToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 /**
  * Validate that the request originates from our own site.
@@ -52,16 +66,48 @@ function isValidOrigin(request: NextRequest): boolean {
   return allowedOrigins.has(source);
 }
 
+/**
+ * Validate the CSRF double-submit token.
+ * The cookie value must match the x-csrf-token header value.
+ */
+function isValidCsrf(request: NextRequest): boolean {
+  const cookieToken = request.cookies.get(CSRF_COOKIE)?.value;
+  const headerToken = request.headers.get(CSRF_HEADER);
+  if (!cookieToken || !headerToken) return false;
+  // Constant-time comparison is not critical here (tokens are random,
+  // not secrets), but we still compare lengths first.
+  return cookieToken.length === headerToken.length && cookieToken === headerToken;
+}
+
+// ─── GET: Issue CSRF token ───────────────────────────────────────────────────
+
+/**
+ * GET /api/auth/session — issues a new CSRF token cookie.
+ * The client calls this once on app load, reads the cookie value, and
+ * includes it as x-csrf-token on subsequent POST/DELETE requests.
+ */
+export async function GET() {
+  const token = generateCsrfToken();
+  const cookieStore = await cookies();
+  cookieStore.set(CSRF_COOKIE, token, {
+    httpOnly: false,       // client JS must read it
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24,  // 1 day
+  });
+  return NextResponse.json({ ok: true });
+}
+
 // ─── POST: Create Session ────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
   try {
     // 1. Rate limiting — 15 token-set attempts per minute per IP
-    //    Prevents brute-force token stuffing and password-spray amplification.
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
       ?? request.headers.get('x-real-ip')
       ?? 'unknown';
-    const { allowed, retryAfterSec } = checkRateLimit(`session:${ip}`, 15, 60_000);
+    const { allowed, retryAfterSec } = await checkRateLimit(`session:${ip}`, 15, 60_000);
     if (!allowed) {
       return NextResponse.json(
         { error: 'Too many requests' },
@@ -69,12 +115,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. CSRF check
+    // 2. CSRF checks — origin + double-submit token
     if (!isValidOrigin(request)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
+    if (!isValidCsrf(request)) {
+      return NextResponse.json({ error: 'Invalid CSRF token' }, { status: 403 });
+    }
 
-    // 2. Parse body
+    // 3. Parse body
     const body = await request.json();
     const { token } = body;
 
@@ -125,7 +174,7 @@ export async function DELETE(request: NextRequest) {
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
       ?? request.headers.get('x-real-ip')
       ?? 'unknown';
-    const { allowed, retryAfterSec } = checkRateLimit(`session-del:${ip}`, 15, 60_000);
+    const { allowed, retryAfterSec } = await checkRateLimit(`session-del:${ip}`, 15, 60_000);
     if (!allowed) {
       return NextResponse.json(
         { error: 'Too many requests' },
@@ -133,9 +182,12 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // CSRF check
+    // CSRF checks — origin + double-submit token
     if (!isValidOrigin(request)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (!isValidCsrf(request)) {
+      return NextResponse.json({ error: 'Invalid CSRF token' }, { status: 403 });
     }
 
     const cookieStore = await cookies();
