@@ -26,10 +26,10 @@ export default function SignupForm() {
   const router = useRouter();
   const { isAuthenticated, loading } = useAuth();
 
-  // Redirect to dashboard if already authenticated
+  // Redirect to profile if already authenticated
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      router.replace('/dashboard');
+      router.replace('/profile');
     }
   }, [loading, isAuthenticated, router]);
 
@@ -54,8 +54,8 @@ export default function SignupForm() {
       // Firebase auto-signs the user in after registration.
       // AuthContext will detect the new user, sync the session cookie,
       // set isAuthenticated=true, and the useEffect above will redirect
-      // to /dashboard automatically.
-      setSuccess('Account created! Taking you to your dashboard...');
+      // to /profile automatically.
+      setSuccess('Account created! Redirecting…');
       form.reset();
     } else {
       setError(result.error || 'Signup failed');
@@ -72,7 +72,7 @@ export default function SignupForm() {
     const result = await APIBook.auth.loginWithGoogle();
     
     if (result.success) {
-      router.replace('/dashboard');
+      router.replace('/profile');
     } else {
       setError(result.error || 'Google signup failed');
     }

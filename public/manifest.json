@@ -1,7 +1,7 @@
 {
-  "name": "Your App Name",
-  "short_name": "App Name",
-  "description": "Your app description",
+  "name": "Next.js Starter Template",
+  "short_name": "Starter",
+  "description": "Production-ready Next.js starter with Firebase Auth, AI adapters, and security hardening",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

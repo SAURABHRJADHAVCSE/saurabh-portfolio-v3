@@ -6,8 +6,6 @@
 // Import auth service
 export { AuthService } from './auth.service';
 
-// Import payment service
-
 // Import types
 export type { AppUser } from './auth.service';
 
@@ -17,9 +15,6 @@ export type { ApiResponse } from '../handler';
 export { createAIAdapter, getAvailableProviders } from '@/lib/ai';
 export { getAIConfig, getCurrentAIProvider } from '../config/environments';
 export type { IAIAdapter } from '@/lib/ai';
-
-// Re-export LinkedIn Autoposter facade
-
 
 // Re-export for convenience
 import { AuthService } from './auth.service';
@@ -34,10 +29,8 @@ import { getAIConfig } from '../config/environments';
  * Usage:
  * import { APIBook } from '@/lib/firebase/services';
  * const result = await APIBook.auth.loginWithEmail(email, password);
- * const payment = await APIBook.payment.createPayment(paymentData);
  * const ai = APIBook.createAI();
  * const text = await ai.generateText({ prompt: 'Hello!' });
- * const series = await APIBook.autoposter.series.getActiveSeries(userId);
  */
 export const APIBook = {
   auth: AuthService,

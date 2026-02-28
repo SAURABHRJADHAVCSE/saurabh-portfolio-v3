@@ -52,8 +52,8 @@ const nextConfig: NextConfig = {
       "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com",
       // Frames: Google (reCAPTCHA)
       "frame-src https://www.google.com",
-      // Form submissions: self + PayU (both test and production)
-      "form-action 'self' https://secure.payu.in https://test.payu.in",
+      // Form submissions: self only (add payment gateway domains when needed)
+      "form-action 'self'",
       // Prevent <object>/<embed> — common XSS vector
       "object-src 'none'",
       // Restrict <base> tag to prevent base-tag hijacking

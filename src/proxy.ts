@@ -11,13 +11,7 @@ const PROTECTED_ROUTES = [
   '/profile',
   '/delete-account',
   '/change-password',
-  '/checkout',
-  '/payment',
   '/ai-test',
-  '/dashboard',
-  '/series',
-  '/ideas',
-  '/settings',
 ] as const;
 
 const AUTH_ROUTES = [
