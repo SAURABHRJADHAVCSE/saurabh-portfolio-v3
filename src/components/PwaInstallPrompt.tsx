@@ -5,8 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Download, X } from 'lucide-react';
 import { toast } from 'sonner';
 
-/** Dismissed flag persists for the session so the prompt isn't annoying. */
+/**
+ * Dismissed flag persists in localStorage so the prompt stays hidden
+ * even across page navigations and new tabs.
+ * Value stored is the Unix timestamp of dismissal — allows re-showing
+ * after DISMISS_DAYS if desired.
+ */
 const DISMISS_KEY = 'pwa-prompt-dismissed';
+/** How many days to suppress the prompt after the user dismisses it. */
+const DISMISS_DAYS = 30;
 /** Installed flag persists across sessions — once installed, never show again. */
 const INSTALLED_KEY = 'pwa-installed';
 /** Delay (ms) before showing the banner after page load. */
@@ -74,7 +81,14 @@ export default function PwaInstallPrompt() {
 
   useEffect(() => {
     // Already running as installed PWA or user previously dismissed
-    if (isRunningAsInstalledApp() || sessionStorage.getItem(DISMISS_KEY)) return;
+    if (isRunningAsInstalledApp()) return;
+    const dismissedAt = localStorage.getItem(DISMISS_KEY);
+    if (dismissedAt) {
+      const elapsed = Date.now() - Number(dismissedAt);
+      if (elapsed < DISMISS_DAYS * 24 * 60 * 60 * 1000) return;
+      // Expired — allow prompt to show again
+      localStorage.removeItem(DISMISS_KEY);
+    }
 
     let showTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -137,15 +151,15 @@ export default function PwaInstallPrompt() {
 
   const dismiss = useCallback(() => {
     setVisible(false);
-    sessionStorage.setItem(DISMISS_KEY, '1');
+    localStorage.setItem(DISMISS_KEY, String(Date.now()));
     deferredPrompt.current = null;
   }, []);
 
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 p-4 animate-in slide-in-from-bottom-4 fade-in duration-300">
-      <div className="mx-auto flex max-w-md items-center gap-3 rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <div className="fixed inset-x-0 bottom-0 z-50 p-4 pointer-events-none animate-in slide-in-from-bottom-4 fade-in duration-300">
+      <div className="pointer-events-auto mx-auto flex max-w-md items-center gap-3 rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
           <Download className="size-4 text-primary" />
         </div>

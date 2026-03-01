@@ -8,13 +8,14 @@ export const metadata: Metadata = {
   openGraph: { title: 'Login', description: 'Sign in to your account' },
 };
 
+/**
+ * Suspense boundary is required because LoginForm calls useSearchParams()
+ * (to read the ?redirect= param). Without it, Next.js cannot statically
+ * pre-render this page.
+ */
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center py-12">
-        <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    }>
+    <Suspense>
       <LoginForm />
     </Suspense>
   );

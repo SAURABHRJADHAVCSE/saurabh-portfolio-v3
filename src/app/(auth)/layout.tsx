@@ -1,5 +1,3 @@
-import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth/server';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -7,14 +5,20 @@ export const metadata: Metadata = {
   description: 'Sign in or create an account',
 };
 
-export default async function AuthLayout({
+/**
+ * Auth layout — synchronous (no server-side auth check).
+ *
+ * The proxy layer (proxy.ts) already redirects authenticated users away from
+ * auth routes, so there is no need for `await getCurrentUser()` here.
+ * Removing it eliminates the loading spinner that previously blocked the
+ * login / signup / forgot-password forms while the Firebase Admin SDK
+ * verified the (non-existent) session token.
+ */
+export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getCurrentUser();
-  if (user) redirect('/profile');
-
   return (
     <div className="grid h-svh lg:grid-cols-2">
       {/* Left — brand panel (hidden on mobile, never scrolls) */}
