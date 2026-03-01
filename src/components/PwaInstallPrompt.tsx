@@ -76,12 +76,26 @@ export default function PwaInstallPrompt() {
     // Already running as installed PWA or user previously dismissed
     if (isRunningAsInstalledApp() || sessionStorage.getItem(DISMISS_KEY)) return;
 
-    // Capture the native install event if/when it fires
+    let showTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Capture the native install event if/when it fires.
+    // This event ONLY fires when the browser believes the app is installable
+    // AND not already installed — so its presence is the definitive signal.
     const handler = (e: Event) => {
       e.preventDefault();
       deferredPrompt.current = e as BeforeInstallPromptEvent;
+      // Show the banner only now that we know the app is truly installable
+      showTimer = setTimeout(() => setVisible(true), SHOW_DELAY);
     };
     window.addEventListener('beforeinstallprompt', handler);
+
+    // For browsers that never fire beforeinstallprompt (iOS Safari),
+    // show a manual-install hint — but only if not already installed.
+    const supportsNativeInstall = 'BeforeInstallPromptEvent' in window
+      || 'onbeforeinstallprompt' in window;
+    if (!supportsNativeInstall) {
+      showTimer = setTimeout(() => setVisible(true), SHOW_DELAY);
+    }
 
     // Listen for the 'appinstalled' event — fires AFTER successful install.
     // Hides the banner immediately and persists the installed flag.
@@ -89,16 +103,14 @@ export default function PwaInstallPrompt() {
       setVisible(false);
       localStorage.setItem(INSTALLED_KEY, '1');
       deferredPrompt.current = null;
+      if (showTimer) clearTimeout(showTimer);
     };
     window.addEventListener('appinstalled', installedHandler);
-
-    // Show the banner after a short delay
-    const timer = setTimeout(() => setVisible(true), SHOW_DELAY);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
       window.removeEventListener('appinstalled', installedHandler);
-      clearTimeout(timer);
+      if (showTimer) clearTimeout(showTimer);
     };
   }, []);
 
