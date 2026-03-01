@@ -40,9 +40,9 @@ export type { IAIAdapter } from './adapter.interface';
 // Factory
 export { createAIAdapter, getAvailableProviders, clearAdapterCache } from './adapter.factory';
 
-// Rate Limiter
-export { RateLimiter, DEFAULT_RATE_LIMITS } from './rate-limiter';
-export type { RateLimiterConfig, RateLimiterStatus } from './rate-limiter';
+// Rate Limiting (Upstash Redis — distributed, used by adapters + API routes)
+export { checkRateLimit } from '../rate-limit';
+export type { RateLimitResult } from '../rate-limit';
 
 // Circuit Breaker
 export { CircuitBreaker, DEFAULT_CIRCUIT_CONFIG } from './circuit-breaker';

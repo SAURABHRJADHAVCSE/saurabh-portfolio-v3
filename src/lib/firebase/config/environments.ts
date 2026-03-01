@@ -67,24 +67,30 @@ export const AI_PROVIDER: AIProvider = 'gemini';
  * Imagen models (imagen-4.0-*) use a separate generateImages API — auto-detected by adapter.
  * 
  * Rate Limit: 15 RPM free tier (configured with buffer of 1)
+ * 
+ * NOTE: Uses a getter function instead of a static constant so that
+ * process.env values are read fresh on every call. This avoids stale
+ * API keys when the key is rotated at runtime without a cold restart.
  */
-const GEMINI_CONFIG: AIProviderConfig = {
-  provider: 'gemini',
-  apiKey: process.env.GEMINI_API_KEY || '',
-  models: {
-    text: 'gemini-2.5-flash',
-    image: 'gemini-2.5-flash-image',
-    video: 'veo-3.1-generate-preview',
-  },
-  pollingInterval: 10000,   // 10s – Veo video gen is slow
-  maxPollingAttempts: 60,   // 10min max wait
-  rateLimit: {
-    maxRequests: 14,        // 15 RPM free tier minus 1 buffer
-    windowMs: 60_000,       // 60 seconds
-    waitForSlot: true,
-    maxWaitMs: 60_000,
-  },
-};
+function getGeminiConfig(): AIProviderConfig {
+  return {
+    provider: 'gemini',
+    apiKey: process.env.GEMINI_API_KEY || '',
+    models: {
+      text: 'gemini-2.5-flash',
+      image: 'gemini-2.5-flash-image',
+      video: 'veo-3.1-generate-preview',
+    },
+    pollingInterval: 10000,   // 10s – Veo video gen is slow
+    maxPollingAttempts: 60,   // 10min max wait
+    rateLimit: {
+      maxRequests: 14,        // 15 RPM free tier minus 1 buffer
+      windowMs: 60_000,       // 60 seconds
+      waitForSlot: true,
+      maxWaitMs: 60_000,
+    },
+  };
+}
 
 /**
  * Kie.AI Configuration
@@ -102,30 +108,45 @@ const GEMINI_CONFIG: AIProviderConfig = {
  * See src/lib/ai/kieai-models.ts for all models + pricing.
  * 
  * Rate Limit: 20 req/10s official (configured with buffer of 2)
+ * 
+ * NOTE: Getter function — reads process.env fresh to handle runtime key rotation.
  */
-const KIEAI_CONFIG: AIProviderConfig = {
-  provider: 'kieai',
-  apiKey: process.env.KIEAI_API_KEY || '',
-  models: {
-    text: 'gemini-2.5-flash',
-    image: 'flux-2/pro-text-to-image',
-    video: 'kling/v2-1-pro',
-  },
-  pollingInterval: 5000,    // 5s – check task status
-  maxPollingAttempts: 60,   // 5min max wait
-  rateLimit: {
-    maxRequests: 18,        // 20 official minus 2 buffer
-    windowMs: 10_000,       // 10 seconds
-    waitForSlot: true,
-    maxWaitMs: 30_000,
-  },
-};
+function getKieaiConfig(): AIProviderConfig {
+  return {
+    provider: 'kieai',
+    apiKey: process.env.KIEAI_API_KEY || '',
+    models: {
+      text: 'gemini-2.5-flash',
+      image: 'flux-2/pro-text-to-image',
+      video: 'kling/v2-1-pro',
+    },
+    pollingInterval: 5000,    // 5s – check task status
+    maxPollingAttempts: 60,   // 5min max wait
+    rateLimit: {
+      maxRequests: 18,        // 20 official minus 2 buffer
+      windowMs: 10_000,       // 10 seconds
+      waitForSlot: true,
+      maxWaitMs: 30_000,
+    },
+  };
+}
 
-/** Map of all provider configs */
+/**
+ * Get the config for a specific AI provider. Always reads process.env fresh
+ * so rotated API keys take effect without a cold restart.
+ */
+export function getAIProviderConfig(provider: AIProvider): AIProviderConfig {
+  switch (provider) {
+    case 'gemini': return getGeminiConfig();
+    case 'kieai':  return getKieaiConfig();
+  }
+}
+
+/** @deprecated Use getAIProviderConfig() for fresh env reads. Kept for compatibility. */
 export const AI_CONFIGS: Record<AIProvider, AIProviderConfig> = {
-  gemini: GEMINI_CONFIG,
-  kieai: KIEAI_CONFIG,
-};
+  get gemini() { return getGeminiConfig(); },
+  get kieai()  { return getKieaiConfig(); },
+} as Record<AIProvider, AIProviderConfig>;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // AI ENVIRONMENT CONFIGS (per environment)
@@ -196,6 +217,9 @@ export const getCurrentFirebaseConfig = (): FirebaseConfig => {
 
 /**
  * Get the AI provider config for the current environment.
+ * Always reads process.env fresh — handles runtime API key rotation
+ * without requiring a cold restart.
+ * 
  * Pass this directly to `createAIAdapter()`.
  * 
  * @example
@@ -205,7 +229,8 @@ export const getCurrentFirebaseConfig = (): FirebaseConfig => {
  * ```
  */
 export const getAIConfig = (): AIProviderConfig => {
-  return getCurrentEnvironment().ai.providerConfig;
+  // Read fresh from getter functions, not from the cached environment config
+  return getAIProviderConfig(getCurrentAIProvider());
 };
 
 /**

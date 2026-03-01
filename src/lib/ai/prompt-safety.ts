@@ -66,7 +66,7 @@ const BLOCKED_PATTERNS: Array<[RegExp, string, string]> = [
 
   // ── Data exfiltration / side-channel ──
   [
-    /\b(?:repeat|output|print|echo|show)\s+(?:the\s+)?(?:system\s+prompt|instructions|api\s*key|secret|password|token)\b/i,
+    /\b(?:repeat|output|print|echo|show|reveal|display|dump)\s+(?:the\s+)?(?:system\s+prompt|instructions|api\s*key|secret|password|token|credentials?)\b/i,
     'EXFIL_SYSTEM_PROMPT',
     'Prompt attempts to extract system prompts or credentials.',
   ],
@@ -81,6 +81,49 @@ const BLOCKED_PATTERNS: Array<[RegExp, string, string]> = [
     /\b(?:synthesize|manufacture|produce)\s+(?:illegal\s+)?(?:drugs?|methamphetamine|fentanyl)\b/i,
     'HARMFUL_DRUGS',
     'Prompt requests drug synthesis instructions.',
+  ],
+
+  // ── Encoding evasion attacks ──
+  [
+    /\\x[0-9a-f]{2}|\\u[0-9a-f]{4}|%[0-9a-f]{2}/i,
+    'ENCODING_ESCAPE',
+    'Prompt contains suspicious encoded sequences.',
+  ],
+  [
+    /\b(?:base64|atob|btoa)\s*(?:\(|decode|encode)/i,
+    'ENCODING_BASE64',
+    'Prompt attempts to use encoding-based evasion.',
+  ],
+  [
+    /\b(?:rot13|caesar\s+cipher)\b/i,
+    'ENCODING_ROT13',
+    'Prompt references encoding evasion techniques.',
+  ],
+
+  // ── Multi-language jailbreak patterns (Hindi/Hinglish) ──
+  [
+    /(?:सभी|सारे)\s+(?:नियम|नियमों)\s+(?:को\s+)?(?:भूल|अनदेखा|हटा|तोड़)/i,
+    'JAILBREAK_HINDI',
+    'Prompt attempts jailbreak in Hindi.',
+  ],
+  [
+    /\b(?:sab|sabhi|saare)\s+(?:rules?|niyam)\s+(?:bhool|ignore|hata|tod)\b/i,
+    'JAILBREAK_HINGLISH',
+    'Prompt attempts jailbreak in Hinglish.',
+  ],
+
+  // ── Prompt length anomaly with repetition markers ──
+  [
+    /(.)\1{50,}/,
+    'REPETITION_FLOOD',
+    'Prompt contains excessive character repetition.',
+  ],
+
+  // ── HTML/script injection in prompt (potential XSS in rendered outputs) ──
+  [
+    /<script[\s>]|javascript\s*:|on(?:load|error|click)\s*=/i,
+    'XSS_INJECTION',
+    'Prompt contains script injection patterns.',
   ],
 ];
 

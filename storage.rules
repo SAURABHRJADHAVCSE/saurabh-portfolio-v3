@@ -23,23 +23,33 @@ service firebase.storage {
       allow read: if request.auth != null;
 
       // Only the owner can upload/overwrite their avatar
-      allow write: if request.auth != null
-                   && request.auth.uid == userId
-                   // Max 5 MB
-                   && request.resource.size < 5 * 1024 * 1024
-                   // Images only
-                   && request.resource.contentType.matches('image/.*');
+      allow create, update: if request.auth != null
+                            && request.auth.uid == userId
+                            // Max 5 MB
+                            && request.resource.size < 5 * 1024 * 1024
+                            // Images only
+                            && request.resource.contentType.matches('image/.*');
+
+      // Explicit delete — owner only (no size/type check needed)
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId;
     }
 
     // ── User Uploads (generic) ──────────────────────────────────────────
     // Path: /users/{userId}/uploads/{fileName}
     match /users/{userId}/uploads/{fileName} {
-      // Owner read/write only
+      // Owner read only
       allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null
-                   && request.auth.uid == userId
-                   // Max 10 MB
-                   && request.resource.size < 10 * 1024 * 1024;
+
+      // Owner create/update with size limit
+      allow create, update: if request.auth != null
+                            && request.auth.uid == userId
+                            // Max 10 MB
+                            && request.resource.size < 10 * 1024 * 1024;
+
+      // Explicit delete — owner only
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId;
     }
   }
 }

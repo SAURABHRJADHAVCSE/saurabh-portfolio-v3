@@ -7,13 +7,13 @@
  *
  * SINGLETON CACHING
  * ─────────────────
- * Adapters are cached by `provider:apiKey` so that rate limiter and circuit
- * breaker state persists across requests within the same serverless cold-start.
- * Without caching, every request would create a fresh adapter — resetting
- * the in-memory rate limiter window and circuit breaker failure count.
+ * Adapters are cached by `provider:apiKey` so that circuit breaker state
+ * persists across requests within the same serverless cold-start.
+ * Rate limiting is handled via Upstash Redis (distributed, not in-memory).
  *
  * In serverless (Vercel), a cold start resets the cache, which is fine —
- * the circuit breaker and rate limiter gracefully restart from zero.
+ * the circuit breaker gracefully restarts from zero, and rate limits are
+ * persisted in Redis.
  */
 
 import type { IAIAdapter } from './adapter.interface';

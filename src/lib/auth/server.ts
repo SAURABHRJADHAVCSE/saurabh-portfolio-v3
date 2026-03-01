@@ -33,10 +33,18 @@ export interface ServerUser {
 
 // ─── Cookie Constants ────────────────────────────────────────────────────────
 
-/** Name of the httpOnly cookie that stores the raw Firebase ID token */
-export const AUTH_TOKEN_COOKIE = 'firebaseAuthToken';
+/** Name of the httpOnly cookie that stores the raw Firebase ID token.
+ *  Uses __Host- prefix in production to enforce Secure + Path=/ + no Domain,
+ *  preventing subdomain attacks. In dev (HTTP), __Host- is not supported.
+ */
+export const AUTH_TOKEN_COOKIE =
+  process.env.NODE_ENV === 'production'
+    ? '__Host-firebaseAuthToken'
+    : 'firebaseAuthToken';
 
-/** Cookie options shared between set/delete */
+/** Cookie options shared between set/delete.
+ *  Note: __Host- prefix requires secure=true, path='/', and NO domain attribute.
+ */
 export const AUTH_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
@@ -45,6 +53,7 @@ export const AUTH_COOKIE_OPTIONS = {
   // 5 days — matches Firebase session cookie expiry. AuthContext refreshes
   // periodically while the app is open to extend the session.
   maxAge: 5 * 24 * 60 * 60,
+  // No `domain` attribute — required by __Host- prefix to prevent subdomain attacks
 };
 
 // ─── Token Verification ──────────────────────────────────────────────────────

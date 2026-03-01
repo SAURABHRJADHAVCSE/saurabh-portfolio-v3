@@ -42,12 +42,16 @@ function sanitizeRedirect(redirect: string | null): string {
 
 /**
  * Check if user is authenticated based on cookies.
+ * Supports both __Host-firebaseAuthToken (production) and firebaseAuthToken (dev).
  * Performs a lightweight JWT structure + expiry check (no crypto needed at
  * the edge). Full cryptographic verification happens server-side via
  * Firebase Admin SDK in getCurrentUser().
  */
 function isAuthenticated(request: NextRequest): boolean {
-  const authToken = request.cookies.get('firebaseAuthToken');
+  // Check both cookie names (__Host- prefix used in production)
+  const authToken =
+    request.cookies.get('__Host-firebaseAuthToken') ??
+    request.cookies.get('firebaseAuthToken');
   if (!authToken?.value) return false;
 
   try {
@@ -117,20 +121,20 @@ export function proxy(request: NextRequest) {
 /**
  * Next.js 16 Proxy Config
  * Optimized matcher for better performance
+ *
+ * REGEX NOTES — The pattern below is a negative-lookahead (?!...) that excludes
+ * static assets, API routes, and framework resources from proxying.
+ *
+ * Escaping rules for this string-based regex:
+ *   - Literal dots must be escaped: \\. (double-backslash because it's in a string)
+ *   - | separates alternatives inside the lookahead
+ *   - The final segment .*\\.(ext|ext) catches any file with a static extension
+ *
+ * If you add new paths to exclude, escape dots properly and test with
+ * `new RegExp(pattern)` in a Node REPL.
  */
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - api routes (handled separately)
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - _next/webpack-hmr (hot reload)
-     * - favicon.ico, icon, apple-icon (auto-generated metadata)
-     * - robots.txt, sitemap.xml (SEO metadata)
-     * - manifest.webmanifest (PWA manifest — auto-served by app/manifest.ts)
-     * - public files (images, fonts, etc.)
-     */
     '/((?!api/|_next/static|_next/image|_next/webpack-hmr|favicon\\.ico|icon|apple-icon|robots\\.txt|sitemap\\.xml|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot)).*)',
   ],
 };

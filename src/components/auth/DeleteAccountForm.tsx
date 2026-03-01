@@ -1,14 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { deleteAccountSchema, type DeleteAccountFormData } from '@/lib/validations/auth';
 import { APIBook } from '@/lib/firebase/services';
 import { useAuth } from '@/contexts/AuthContext';
-import { Button } from '@/components/ui/button';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import PasswordInput from '@/components/auth/password-input';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -25,7 +22,7 @@ export default function DeleteAccountForm() {
 
   const isGoogleUser = user?.providerData[0]?.providerId === 'google.com';
 
-  const handleDelete = async (data?: DeleteAccountFormData) => {
+  const handleDelete = useCallback(async (data?: DeleteAccountFormData) => {
     setIsDeleting(true);
     try {
       const result = await APIBook.auth.deleteAccount(isGoogleUser ? undefined : data?.password);
@@ -39,28 +36,33 @@ export default function DeleteAccountForm() {
     } finally {
       setIsDeleting(false);
     }
-  };
+  }, [isGoogleUser]);
 
-  /* Step 1 — Warning */
+  /* ── Step 1: Warning ────────────────────────────────────────────── */
   if (!confirmed) {
     return (
-      <div className="grid gap-6">
-        <div className="grid gap-2 text-center">
-          <h1 className="text-2xl font-bold tracking-tight text-destructive">Delete Account</h1>
-          <p className="text-sm text-muted-foreground">
+      <div className="grid gap-6 w-full">
+        <header className="text-center">
+          <h1 className="text-xl font-bold tracking-tight text-destructive sm:text-2xl">
+            Delete Account
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
             This action cannot be undone. Your account and all data will be permanently removed.
           </p>
-        </div>
+        </header>
 
-        <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+        <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
           <li>Permanently remove all your account data</li>
           <li>Sign you out of all devices</li>
           <li>Remove access to any associated services</li>
         </ul>
 
-        <Button variant="destructive" className="w-full" onClick={() => setConfirmed(true)}>
+        <button
+          onClick={() => setConfirmed(true)}
+          className="w-full rounded-md bg-destructive px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+        >
           I understand, continue
-        </Button>
+        </button>
 
         <p className="text-center text-sm text-muted-foreground">
           <Link href="/profile" className="font-medium text-primary underline-offset-4 hover:underline">
@@ -71,70 +73,71 @@ export default function DeleteAccountForm() {
     );
   }
 
-  /* Step 2 — Confirmation */
+  /* ── Step 2: Confirmation ───────────────────────────────────────── */
   return (
-    <div className="grid gap-6">
-      <div className="grid gap-2 text-center">
-        <h1 className="text-2xl font-bold tracking-tight text-destructive">Confirm Deletion</h1>
-        <p className="text-sm text-muted-foreground">
+    <div className="grid gap-6 w-full">
+      <header className="text-center">
+        <h1 className="text-xl font-bold tracking-tight text-destructive sm:text-2xl">
+          Confirm Deletion
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
           {isGoogleUser
             ? 'You will be prompted to re-authenticate with Google.'
             : 'Enter your password and type DELETE to confirm.'}
         </p>
-      </div>
+      </header>
 
       {isGoogleUser ? (
-        <Button
-          variant="destructive"
-          className="w-full"
+        <button
           onClick={() => handleDelete()}
           disabled={isDeleting}
+          className="w-full rounded-md bg-destructive px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
         >
           {isDeleting ? 'Deleting\u2026' : 'Confirm with Google & Delete'}
-        </Button>
+        </button>
       ) : (
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleDelete)} className="grid gap-4">
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Current Password</FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      value={field.value}
-                      onChange={field.onChange}
-                      placeholder="Enter your password"
-                      disabled={isDeleting}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+        <form onSubmit={form.handleSubmit(handleDelete)} className="grid gap-4">
+          {/* Password */}
+          <fieldset disabled={isDeleting} className="grid gap-1.5">
+            <label htmlFor="delete-pw" className="text-sm font-medium">
+              Current Password
+            </label>
+            <PasswordInput
+              id="delete-pw"
+              value={form.watch('password')}
+              onChange={v => form.setValue('password', v, { shouldValidate: true })}
+              placeholder="Enter your password"
+              disabled={isDeleting}
             />
+            {form.formState.errors.password && (
+              <p className="text-xs text-destructive">{form.formState.errors.password.message}</p>
+            )}
+          </fieldset>
 
-            <FormField
-              control={form.control}
-              name="confirmText"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    Type <code className="rounded bg-muted px-1 text-destructive font-bold">DELETE</code> to confirm
-                  </FormLabel>
-                  <FormControl>
-                    <Input placeholder="DELETE" disabled={isDeleting} className="font-mono" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+          {/* Confirm text */}
+          <fieldset disabled={isDeleting} className="grid gap-1.5">
+            <label htmlFor="delete-confirm" className="text-sm font-medium">
+              Type <code className="rounded bg-muted px-1 text-destructive font-bold">DELETE</code> to confirm
+            </label>
+            <input
+              id="delete-confirm"
+              placeholder="DELETE"
+              className="h-9 w-full rounded-md border border-input bg-transparent px-3 font-mono text-sm outline-none transition-colors focus:ring-2 focus:ring-ring disabled:opacity-50"
+              {...form.register('confirmText')}
             />
+            {form.formState.errors.confirmText && (
+              <p className="text-xs text-destructive">{form.formState.errors.confirmText.message}</p>
+            )}
+          </fieldset>
 
-            <Button type="submit" variant="destructive" className="w-full" disabled={isDeleting}>
-              {isDeleting ? 'Deleting\u2026' : 'Delete My Account Permanently'}
-            </Button>
-          </form>
-        </Form>
+          <button
+            type="submit"
+            disabled={isDeleting}
+            className="w-full rounded-md bg-destructive px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
+          >
+            {isDeleting ? 'Deleting\u2026' : 'Delete My Account Permanently'}
+          </button>
+        </form>
       )}
 
       <p className="text-center text-xs text-muted-foreground">
@@ -142,7 +145,11 @@ export default function DeleteAccountForm() {
       </p>
 
       <p className="text-center text-sm text-muted-foreground">
-        <button type="button" onClick={() => setConfirmed(false)} className="font-medium text-primary underline-offset-4 hover:underline">
+        <button
+          type="button"
+          onClick={() => setConfirmed(false)}
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
           Go back
         </button>
       </p>

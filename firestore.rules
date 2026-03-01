@@ -23,8 +23,12 @@ service cloud.firestore {
     match /uat_users/{userId} {
       // Users can only read/write their own document
       allow read: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+                    // Cap document size to 20 KB to prevent cost bloat
+                    && request.resource.data.size() < 20000;
       allow update: if request.auth != null && request.auth.uid == userId
+                    // Cap document size to 20 KB to prevent cost bloat
+                    && request.resource.data.size() < 20000
                     // Prevent users from changing immutable fields
                     && !request.resource.data.diff(resource.data).affectedKeys()
                          .hasAny(['uid', 'createdAt', 'environment']);
@@ -34,8 +38,10 @@ service cloud.firestore {
     // ── PROD User Profiles ──────────────────────────────────────────────
     match /prod_users/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+                    && request.resource.data.size() < 20000;
       allow update: if request.auth != null && request.auth.uid == userId
+                    && request.resource.data.size() < 20000
                     && !request.resource.data.diff(resource.data).affectedKeys()
                          .hasAny(['uid', 'createdAt', 'environment']);
       allow delete: if request.auth != null && request.auth.uid == userId;

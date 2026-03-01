@@ -16,6 +16,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { getCurrentUser } from '@/lib/auth/server';
 
 /** Only allow alphanumeric, hyphens, and underscores in file IDs */
@@ -23,6 +24,23 @@ const FILE_ID_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
 
 /** Maximum video size we'll proxy (100 MB) */
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
+
+/**
+ * Verify the HMAC signature that ties this fileId to the requesting user.
+ * The AI test route signs each proxy URL with HMAC(fileId:userId).
+ * This prevents User A from downloading User B's generated video.
+ */
+function verifyVideoSignature(fileId: string, userId: string, sig: string): boolean {
+  const secret = process.env.VIDEO_PROXY_HMAC_SECRET || process.env.GEMINI_API_KEY || '';
+  const expected = createHmac('sha256', secret)
+    .update(`${fileId}:${userId}`)
+    .digest('hex')
+    .slice(0, 32);
+
+  // Timing-safe comparison to prevent timing attacks
+  if (sig.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+}
 
 export async function GET(request: NextRequest) {
   // 1. Auth guard
@@ -37,6 +55,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { error: 'Invalid or missing fileId parameter' },
       { status: 400 },
+    );
+  }
+
+  // 2a. Verify HMAC signature — ensures this user generated this video
+  const sig = request.nextUrl.searchParams.get('sig');
+  if (!sig || !verifyVideoSignature(fileId, user.uid, sig)) {
+    return NextResponse.json(
+      { error: 'Invalid or missing video access signature' },
+      { status: 403 },
     );
   }
 

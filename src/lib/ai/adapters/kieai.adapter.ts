@@ -32,10 +32,9 @@ import type {
   TaskState,
 } from '../types';
 import { AIAdapterError, CapabilityNotSupportedError } from '../types';
-import { RateLimiter, DEFAULT_RATE_LIMITS } from '../rate-limiter';
-import type { RateLimiterConfig, RateLimiterStatus } from '../rate-limiter';
+import { checkRateLimit } from '@/lib/rate-limit';
 import { CircuitBreaker } from '../circuit-breaker';
-import type { CircuitBreakerConfig, CircuitBreakerStatus } from '../circuit-breaker';
+import type { CircuitBreakerStatus } from '../circuit-breaker';
 import {
   KIE_MODEL_MAP,
   KIE_ALL_MODELS,
@@ -89,7 +88,7 @@ export class KieAIAdapter implements IAIAdapter {
   private readonly models: { text: string; image: string; video: string };
   private readonly pollingInterval: number;
   private readonly maxPollingAttempts: number;
-  private readonly rateLimiter: RateLimiter;
+  private readonly providerRateLimit: { maxRequests: number; windowMs: number };
   private readonly circuitBreaker: CircuitBreaker;
 
   constructor(config: AIProviderConfig) {
@@ -102,9 +101,11 @@ export class KieAIAdapter implements IAIAdapter {
     this.pollingInterval = config.pollingInterval ?? 5_000;
     this.maxPollingAttempts = config.maxPollingAttempts ?? 60;
 
-    // Initialize rate limiter from config or use provider defaults
-    const rlConfig: RateLimiterConfig = config.rateLimit ?? DEFAULT_RATE_LIMITS.kieai;
-    this.rateLimiter = new RateLimiter(rlConfig);
+    // Provider-level rate limit config (enforced via Upstash Redis)
+    this.providerRateLimit = {
+      maxRequests: config.rateLimit?.maxRequests ?? 18,  // 20 official - 2 buffer
+      windowMs: config.rateLimit?.windowMs ?? 10_000,
+    };
 
     // Circuit breaker — trips after consecutive failures to avoid wasting quota
     this.circuitBreaker = new CircuitBreaker(config.circuitBreaker);
@@ -150,10 +151,10 @@ export class KieAIAdapter implements IAIAdapter {
   }
 
   /**
-   * Check rate limiter status without consuming a slot.
+   * Check rate limiter config.
    */
-  getRateLimitStatus(): RateLimiterStatus {
-    return this.rateLimiter.getStatus();
+  getRateLimitStatus(): { maxRequests: number; windowMs: number } {
+    return { ...this.providerRateLimit };
   }
 
   /**
@@ -180,8 +181,8 @@ export class KieAIAdapter implements IAIAdapter {
     this.circuitBreaker.guardRequest('kieai');
 
     try {
-      // Rate limit check
-      await this.rateLimiter.acquire('kieai');
+      // Rate limit check (Upstash Redis — distributed)
+      await this.enforceProviderRateLimit();
 
       const model = this.models.text;
       const url = `${KIE_BASE_URL}/${model}/v1/chat/completions`;
@@ -247,8 +248,8 @@ export class KieAIAdapter implements IAIAdapter {
     this.circuitBreaker.guardRequest('kieai');
 
     try {
-      // Rate limit check
-      await this.rateLimiter.acquire('kieai');
+      // Rate limit check (Upstash Redis — distributed)
+      await this.enforceProviderRateLimit();
 
       const taskBody = {
         model,
@@ -299,8 +300,8 @@ export class KieAIAdapter implements IAIAdapter {
     this.circuitBreaker.guardRequest('kieai');
 
     try {
-      // Rate limit check
-      await this.rateLimiter.acquire('kieai');
+      // Rate limit check (Upstash Redis — distributed)
+      await this.enforceProviderRateLimit();
 
       const taskBody = {
         model,
@@ -338,6 +339,26 @@ export class KieAIAdapter implements IAIAdapter {
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
+
+  /**
+   * Enforce provider-level rate limiting via Upstash Redis.
+   * Distributed across all serverless instances — no cold-start reset issue.
+   */
+  private async enforceProviderRateLimit(): Promise<void> {
+    const { allowed } = await checkRateLimit(
+      `provider:kieai`,
+      this.providerRateLimit.maxRequests,
+      this.providerRateLimit.windowMs,
+    );
+    if (!allowed) {
+      throw new AIAdapterError(
+        `Provider rate limit exceeded (${this.providerRateLimit.maxRequests} requests per ${this.providerRateLimit.windowMs}ms). Try again later.`,
+        'kieai',
+        'RATE_LIMITED',
+        429,
+      );
+    }
+  }
 
   /**
    * POST /api/v1/jobs/createTask

@@ -14,6 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createHmac } from 'crypto';
 import { getCurrentUser } from '@/lib/auth/server';
 import { checkRateLimit } from '@/lib/rate-limit';
 import {
@@ -45,9 +46,59 @@ const VALID_IMAGE_URL_SCHEMES = ['gs:', 'https:'];
 const AI_RATE_LIMIT_MAX = 20;
 const AI_RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 
+/** Max request body size (1 MB). Rejects large payloads before JSON.parse. */
+const MAX_BODY_SIZE = 1_048_576;
+
+// ─── Video Proxy HMAC Signing ────────────────────────────────────────────────
+// Ties each proxy URL to the user who generated it.
+// The video-proxy route verifies this signature to prevent cross-user access.
+
+/**
+ * HMAC-sign a video fileId for a specific user.
+ * Returns a 32-char hex signature appended to proxy URLs.
+ */
+export function signVideoFileId(fileId: string, userId: string): string {
+  const secret = process.env.VIDEO_PROXY_HMAC_SECRET || process.env.GEMINI_API_KEY || '';
+  return createHmac('sha256', secret)
+    .update(`${fileId}:${userId}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
+/**
+ * Post-process video generation results: add HMAC signatures to proxy URLs
+ * so the video-proxy route can verify the requesting user owns the video.
+ */
+function signVideoUrls(result: unknown, userId: string): unknown {
+  if (
+    result &&
+    typeof result === 'object' &&
+    'videos' in result &&
+    Array.isArray((result as { videos: unknown[] }).videos)
+  ) {
+    const typed = result as { videos: Array<{ url: string; mimeType: string }> };
+    typed.videos = typed.videos.map((v) => {
+      try {
+        const url = new URL(v.url, 'http://placeholder');
+        const fileId = url.searchParams.get('fileId');
+        if (fileId) {
+          url.searchParams.set('sig', signVideoFileId(fileId, userId));
+          // Return just the path + query (relative URL)
+          return { ...v, url: `${url.pathname}${url.search}` };
+        }
+      } catch {
+        // Not a proxy URL — return as-is
+      }
+      return v;
+    });
+  }
+  return result;
+}
+
 // ─── SSRF Protection ─────────────────────────────────────────────────────────
 // Block URLs pointing to private/internal networks to prevent SSRF attacks.
-// Covers: localhost, loopback, link-local, RFC 1918, cloud metadata endpoints.
+// Covers: localhost, loopback, link-local, RFC 1918, cloud metadata endpoints,
+// decimal/octal/hex IP encodings, IPv6 addresses, DNS rebinding patterns.
 
 const SSRF_BLOCKED_HOSTNAMES = new Set([
   'localhost',
@@ -57,34 +108,120 @@ const SSRF_BLOCKED_HOSTNAMES = new Set([
   'metadata.google.internal',       // GCP metadata
   'metadata.google',
   'instance-data',
+  '169.254.169.254',                 // AWS/GCP/Azure metadata IP
+  'metadata.azure.com',             // Azure metadata (IMDS)
+  'metadata.internal',
 ]);
+
+/** Patterns for DNS rebinding services that resolve to private IPs */
+const SSRF_BLOCKED_HOST_PATTERNS = [
+  /\.nip\.io$/i,
+  /\.sslip\.io$/i,
+  /\.xip\.io$/i,
+  /\.localtest\.me$/i,
+  /\.lvh\.me$/i,
+  /\.vcap\.me$/i,
+];
 
 /**
  * Check if a hostname resolves to a private/internal IP range.
  * Blocks: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 169.254.x.x (link-local),
- * 100.64-127.x.x (CGNAT), and the AWS/GCP/Azure metadata IP.
+ * 100.64-127.x.x (CGNAT), loopback, and the AWS/GCP/Azure metadata IP.
+ *
+ * Also detects obfuscated IP encodings:
+ *   - Decimal: 2130706433 → 127.0.0.1
+ *   - Octal:   0177.0.0.1 → 127.0.0.1
+ *   - Hex:     0x7f000001 → 127.0.0.1
  */
 function isPrivateIp(hostname: string): boolean {
-  // Match IPv4 addresses
+  // ── Standard dotted-decimal IPv4 ──
   const ipMatch = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!ipMatch) return false;
+  if (ipMatch) {
+    const [, a, b] = ipMatch.map(Number) as [number, number, number, number, number];
+    if (
+      a === 10 ||                                    // 10.0.0.0/8
+      (a === 172 && b >= 16 && b <= 31) ||           // 172.16.0.0/12
+      (a === 192 && b === 168) ||                    // 192.168.0.0/16
+      (a === 169 && b === 254) ||                    // 169.254.0.0/16 (link-local / metadata)
+      (a === 100 && b >= 64 && b <= 127) ||          // 100.64.0.0/10 (CGNAT)
+      a === 127 ||                                   // 127.0.0.0/8 (loopback)
+      a === 0                                        // 0.0.0.0/8
+    ) {
+      return true;
+    }
+  }
 
-  const [, a, b] = ipMatch.map(Number) as [number, number, number, number, number];
+  // ── Decimal IP (single integer like 2130706433 → 127.0.0.1) ──
+  if (/^\d{1,10}$/.test(hostname)) {
+    const decimal = parseInt(hostname, 10);
+    if (decimal >= 0 && decimal <= 0xFFFFFFFF) {
+      const a = (decimal >>> 24) & 0xFF;
+      const b = (decimal >>> 16) & 0xFF;
+      if (
+        a === 10 || a === 127 || a === 0 ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168) ||
+        (a === 169 && b === 254) ||
+        (a === 100 && b >= 64 && b <= 127)
+      ) {
+        return true;
+      }
+    }
+  }
 
-  return (
-    a === 10 ||                                    // 10.0.0.0/8
-    (a === 172 && b >= 16 && b <= 31) ||           // 172.16.0.0/12
-    (a === 192 && b === 168) ||                    // 192.168.0.0/16
-    (a === 169 && b === 254) ||                    // 169.254.0.0/16 (link-local / AWS metadata)
-    (a === 100 && b >= 64 && b <= 127) ||          // 100.64.0.0/10 (CGNAT)
-    a === 127 ||                                   // 127.0.0.0/8 (loopback)
-    a === 0                                        // 0.0.0.0/8
-  );
+  // ── Hex IP (0x7f000001 → 127.0.0.1) ──
+  if (/^0x[0-9a-f]{1,8}$/i.test(hostname)) {
+    const hex = parseInt(hostname, 16);
+    const a = (hex >>> 24) & 0xFF;
+    const b = (hex >>> 16) & 0xFF;
+    if (
+      a === 10 || a === 127 || a === 0 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      (a === 100 && b >= 64 && b <= 127)
+    ) {
+      return true;
+    }
+  }
+
+  // ── Octal-encoded octets (e.g. 0177.0.0.1 → 127.0.0.1) ──
+  const octalMatch = hostname.match(/^(0\d+)\.(0?\d+)\.(0?\d+)\.(0?\d+)$/);
+  if (octalMatch) {
+    const a = parseInt(octalMatch[1], 8);
+    const b = parseInt(octalMatch[2], 8);
+    if (
+      a === 10 || a === 127 || a === 0 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      (a === 100 && b >= 64 && b <= 127)
+    ) {
+      return true;
+    }
+  }
+
+  // ── IPv6 loopback & mapped addresses ──
+  const lower = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (
+    lower === '::1' ||                               // IPv6 loopback
+    lower === '::' ||                                // unspecified
+    lower.startsWith('::ffff:127.') ||              // IPv4-mapped loopback
+    lower.startsWith('::ffff:10.') ||               // IPv4-mapped private
+    lower.startsWith('::ffff:192.168.') ||          // IPv4-mapped private
+    lower.startsWith('::ffff:169.254.') ||          // IPv4-mapped link-local
+    lower.startsWith('fe80:') ||                    // IPv6 link-local
+    lower.startsWith('fc') || lower.startsWith('fd') // IPv6 unique-local (ULA)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
  * Validate a URL is safe from SSRF — blocks private IPs, metadata endpoints,
- * and non-allowed schemes.
+ * DNS rebinding services, and non-allowed schemes.
  */
 function isSsrfSafe(urlString: string): { safe: boolean; reason?: string } {
   try {
@@ -104,9 +241,26 @@ function isSsrfSafe(urlString: string): { safe: boolean; reason?: string } {
       return { safe: false, reason: 'imageUrl points to a blocked internal address' };
     }
 
-    // Private IP check
+    // DNS rebinding service check
+    for (const pattern of SSRF_BLOCKED_HOST_PATTERNS) {
+      if (pattern.test(host)) {
+        return { safe: false, reason: 'imageUrl uses a DNS rebinding service' };
+      }
+    }
+
+    // Private IP check (dotted-decimal, decimal, hex, octal, IPv6)
     if (isPrivateIp(host)) {
       return { safe: false, reason: 'imageUrl points to a private/internal network' };
+    }
+
+    // Block URLs with credentials (user:pass@host)
+    if (parsed.username || parsed.password) {
+      return { safe: false, reason: 'imageUrl must not contain credentials' };
+    }
+
+    // Block non-standard ports commonly used for internal services
+    if (parsed.port && !['443', '80', ''].includes(parsed.port)) {
+      return { safe: false, reason: 'imageUrl must use standard ports (80/443)' };
     }
 
     return { safe: true };
@@ -172,7 +326,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 2. Parse JSON
+  // 2. Reject oversized payloads before parsing (prevent memory-spike DoS)
+  const contentLength = request.headers.get('content-length');
+  if (contentLength && parseInt(contentLength, 10) > MAX_BODY_SIZE) {
+    return NextResponse.json(
+      { error: 'Request body too large (max 1 MB)' },
+      { status: 413 },
+    );
+  }
+
+  // 3. Parse JSON
   let body: TestRequestBody;
   try {
     body = (await request.json()) as TestRequestBody;
@@ -330,6 +493,11 @@ export async function POST(request: NextRequest) {
     }
 
     const durationMs = Date.now() - startTime;
+
+    // Sign video proxy URLs with HMAC so the proxy can verify user ownership
+    if (body.capability === 'video') {
+      result = signVideoUrls(result, user.uid);
+    }
 
     // Audit log — success
     await logAuditEntry({

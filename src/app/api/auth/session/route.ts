@@ -92,7 +92,7 @@ export async function GET() {
   cookieStore.set(CSRF_COOKIE, token, {
     httpOnly: false,       // client JS must read it
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'strict',    // strict prevents CSRF via cross-origin navigation too
     path: '/',
     maxAge: 60 * 60 * 24,  // 1 day
   });
