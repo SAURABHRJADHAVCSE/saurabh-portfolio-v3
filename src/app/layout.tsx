@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Barlow, Rubik, Geist_Mono } from "next/font/google";
+import { Barlow, Rubik, Geist_Mono, Space_Grotesk, Caveat } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -30,6 +30,24 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
   display: "swap",
   fallback: ["Courier New", "monospace"],
+});
+
+// Space Grotesk - Neo-Brutalist headings
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
+  fallback: ["system-ui", "-apple-system", "sans-serif"],
+});
+
+// Caveat - Handwritten accent font
+const caveat = Caveat({
+  variable: "--font-caveat",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  fallback: ["cursive"],
 });
 
 const APP_NAME = 'Next.js Starter Template';
@@ -67,7 +85,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${barlow.variable} ${rubik.variable} ${geistMono.variable} antialiased`}
+        className={`${barlow.variable} ${rubik.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${caveat.variable} antialiased`}
       >
         <ThemeProvider
           attribute="class"
